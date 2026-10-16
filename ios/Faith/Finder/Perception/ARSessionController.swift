@@ -1,5 +1,6 @@
 import Foundation
 import ARKit
+import AVFoundation
 import RealityKit
 import UIKit
 import os
@@ -39,6 +40,8 @@ final class ARSessionController: NSObject, PerceptionService, ARSessionDelegate 
     private let logger = Logger(subsystem: "app.faith.finder", category: "Perception")
 
     private var latestBodyPose: BodyPose?
+    private var framesSinceStart = 0
+    private var firstFramePosition: SIMD3<Float>?
     private var lastForward = SIMD3<Float>(0, 0, -1)
     /// World Y of every horizontal plane ARKit has found, for plane intersection.
     private var horizontalPlaneHeights: [UUID: Float] = [:]
@@ -95,8 +98,20 @@ final class ARSessionController: NSObject, PerceptionService, ARSessionDelegate 
         isRunning = true
         recoveryAttempts = 0
         lastFrameAt = Date()
-        runSession(resetWorld: resetWorld)
+        runWhenInWindow(resetWorld: resetWorld, attemptsLeft: 40)
         startWatchdog()
+    }
+
+    /// World tracking never initializes if the session starts before the AR view is in a window.
+    private func runWhenInWindow(resetWorld: Bool, attemptsLeft: Int) {
+        guard isRunning else { return }
+        if arView.window != nil || attemptsLeft == 0 {
+            runSession(resetWorld: resetWorld)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.runWhenInWindow(resetWorld: resetWorld, attemptsLeft: attemptsLeft - 1)
+        }
     }
 
     func pause() {
@@ -122,7 +137,9 @@ final class ARSessionController: NSObject, PerceptionService, ARSessionDelegate 
             options = [.resetTracking, .removeExistingAnchors]
         }
 
-        logger.info("Starting AR session, LiDAR depth: \(self.usesLiDAR, privacy: .public), new world: \(resetWorld, privacy: .public)")
+        framesSinceStart = 0
+        let camera = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+        logger.info("Starting AR session, LiDAR depth: \(self.usesLiDAR, privacy: .public), new world: \(resetWorld, privacy: .public), camera allowed: \(camera, privacy: .public), in window: \(self.arView.window != nil, privacy: .public)")
         arView.session.run(configuration, options: options)
         setStatus(tracking: .initializing, planeDetected: planeDetected)
     }
@@ -381,6 +398,19 @@ final class ARSessionController: NSObject, PerceptionService, ARSessionDelegate 
         let trackingState = frame.camera.trackingState
 
         lastFrameAt = Date()
+        framesSinceStart += 1
+        if framesSinceStart == 1 { firstFramePosition = Self.translation(of: transform) }
+        if framesSinceStart == 600, trackingSummary == .initializing {
+            logger.warning("Tracking still initializing after 10 s, restarting the AR session")
+            runSession(resetWorld: true)
+            return
+        }
+        if framesSinceStart % 300 == 0, trackingSummary != .normal {
+            let light = Int(frame.lightEstimate?.ambientIntensity ?? -1)
+            let features = frame.rawFeaturePoints?.points.count ?? 0
+            let moved = simd_distance(Self.translation(of: transform), firstFramePosition ?? Self.translation(of: transform))
+            logger.info("Frame \(self.framesSinceStart, privacy: .public): \(Self.describe(self.trackingSummary), privacy: .public), light \(light, privacy: .public), feature points \(features, privacy: .public), moved \(moved, privacy: .public) m")
+        }
 
         let pose = Self.bodyPose(fromCameraTransform: transform, previousForward: lastForward)
         lastForward = pose.forward

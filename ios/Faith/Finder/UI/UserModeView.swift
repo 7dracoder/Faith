@@ -91,8 +91,9 @@ struct UserModeView: View {
         }
     }
 
+    /// Translucent so the live camera shows through, dark enough to keep the white text high contrast.
     private var backgroundColor: Color {
-        isHoldingToAsk ? FinderTheme.mint : FinderTheme.forest
+        isHoldingToAsk ? FinderTheme.mint.opacity(0.88) : Color.black.opacity(0.6)
     }
 
     private var foregroundColor: Color {

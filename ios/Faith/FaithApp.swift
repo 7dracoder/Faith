@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 @main
 struct FaithApp: App {
@@ -37,6 +38,10 @@ final class FaithController: ObservableObject {
         coordinator.onBookingRequest = { [weak self] request in self?.startBooking(request) }
         agent.onFindObject = { [weak self] object in self?.pendingFind = object }
         agent.onFinished = { [weak self] in self?.resumeFinder() }
+        Task {
+            let reachable = await client.ping()
+            Logger(subsystem: "app.faith.booking", category: "Backend").info("Faith backend reachable: \(reachable, privacy: .public)")
+        }
     }
 
     private func startBooking(_ request: String) {

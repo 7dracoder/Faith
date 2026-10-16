@@ -20,8 +20,9 @@ final class DebugMarkers {
 
     var isEnabled: Bool {
         let defaults = UserDefaults.standard
+        // Off unless a developer turns it on: the overlay's buttons can pause the camera.
         guard defaults.object(forKey: Self.userDefaultsKey) != nil else {
-            return true
+            return false
         }
         return defaults.bool(forKey: Self.userDefaultsKey)
     }

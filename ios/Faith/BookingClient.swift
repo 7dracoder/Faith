@@ -57,6 +57,13 @@ final class BookingClient {
     }
 
     private static let service = "app.faith.booking.session"
+    /// Also asks for Local Network access at launch rather than in the middle of a booking.
+    func ping() async -> Bool {
+        var request = URLRequest(url: baseURL.appendingPathComponent("health"))
+        request.timeoutInterval = 8
+        guard let (_, response) = try? await transport.data(for: request) else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
+    }
     func locateObject(query: String, jpeg: Data) async throws -> ObjectLocationAnswer {
         try await start()
         struct FrameRequest: Encodable { let objectQuery: String; let jpegBase64: String; let consent: Bool }
