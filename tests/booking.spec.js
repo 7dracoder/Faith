@@ -101,6 +101,12 @@ test("network failure does not create a ticket and can be retried", async ({ pag
 });
 
 test("optional motion changes focus without activating or confirming a ticket", async ({ page }) => {
+  // Supply a synthetic sensor even on headless hosts without the platform API.
+  await page.evaluate(() => {
+    window.DeviceOrientationEvent = class extends Event {
+      constructor(type, { gamma }) { super(type); this.gamma = gamma; }
+    };
+  });
   await page.locator("#open-access").click();
   await page.locator("#toggle-motion").click();
   await expect(page.locator("#sensor-status")).toHaveText("Motion: calibrating…");
@@ -116,4 +122,16 @@ test("optional motion changes focus without activating or confirming a ticket", 
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await expect(page.locator("#sensor-status")).toHaveText("Text & touch ready");
+});
+
+test("browsers without a motion API retain text and touch booking", async ({ page }) => {
+  await page.evaluate(() => { window.DeviceOrientationEvent = undefined; });
+  await page.locator("#open-access").click();
+  await page.locator("#toggle-motion").click();
+  await expect(page.locator("#motion-note")).toContainText("Motion isn’t available");
+  await expect(page.locator("#sensor-status")).toHaveText("Text & touch ready");
+  await page.getByRole("button", { name: "Done, make it mine" }).click();
+  await page.locator("[data-review]").first().click();
+  await expect(page.locator("#review-dialog")).toBeVisible();
+  await expect(page.locator("#confirm-booking")).toBeDisabled();
 });

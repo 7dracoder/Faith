@@ -3,7 +3,7 @@
 ## Verified on October 16, 2026
 
 - 35 backend tests passed, including mocked Bedrock, SurrealDB password/token authentication, Anchor, and Arize contracts.
-- 6 browser tests passed in Chromium, including the full booking/cancellation flow, keyboard and mobile layout, contrast checks, network retry, and simulated tilt/background shutdown.
+- 7 browser tests passed in Chromium, including the full booking/cancellation flow, keyboard and mobile layout, contrast checks, network retry, simulated tilt/background shutdown, and the no-sensor fallback. Synthetic sensor events do not verify physical hardware.
 - Automated WCAG A/AA checks reported no violations on the tested home and review states. This covers only the checked rules and states.
 - Local synthetic intent evaluation passed 5 of 5 cases.
 - XcodeGen generated the Faith project; the iOS app and native test bundle compiled successfully with Xcode 27.1 for a generic iOS simulator destination.
@@ -11,7 +11,7 @@
 - Anchor and Daytona authenticated read-only API checks returned HTTP 200. Arize accepted a synthetic span; the running app’s ticket search and five synthetic intent evaluations also used the configured AX exporter. No real user information was attached.
 - A free `faith` SurrealDB Cloud instance was deployed after explicit approval. Studio first displayed provisioning, then navigated to its database workspace; that page rendered blank through refreshes. Application connection verification remains pending retrieval of the endpoint and account-owner credential setup. No readiness or database-authentication success is claimed.
 - No Anchor browser workload or Daytona sandbox was created during these connection checks. AWS credit eligibility/balance and real ticket suppliers were not exercised.
-- Current application source, filenames, assets, docs, and workflows were checked for previous product/event/team references and none remain. Repository commit history and remote hosting metadata were preserved.
+- Current application source, filenames, assets, docs, and workflows were checked for previous product/event/team references and none remain. Faith was published to `7dracoder/Faith` with a fresh initial commit, without importing previous project history or contributors. Local recovery history was retained privately.
 
 ## Automated scope
 
