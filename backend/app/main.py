@@ -16,12 +16,13 @@ from starlette.concurrency import run_in_threadpool
 from app.assistant import bedrock_intent, local_intent
 from app.catalog import search_catalog
 from app.config import Settings
-from app.integrations import (ACCESS_SOURCES, REAL_SOURCES, access_question, configure_tracing, conversation_token, create_speech,
-                              describe_preferences, forget_object_memory, forget_preferences, load_object_memory, load_preferences,
-                              matching_objects, mirror_booking, operation, real_times, remember_objects, research_access,
-                              save_preferences)
+from app.integrations import (ACCESS_SOURCES, access_question, configure_tracing, conversation_token, create_speech,
+                              describe_preferences, forget_object_memory, forget_preferences, live_search, load_object_memory,
+                              load_preferences, load_trips, matching_objects, mirror_booking, operation, remember_objects, research_access,
+                              save_preferences, save_trip)
 from app.models import (AccessInfoRequest, ConfirmRequest, IntentRequest, MemoryUpdate, ObjectLocateRequest, ObjectScanRequest,
-                        QuoteRequest, RealSearchRequest, ResearchRequest, SavedPreferences, SearchRequest, SpeechRequest)
+                        QuoteRequest, RealSearchRequest, ResearchRequest, SavedPreferences, SearchRequest, SpeechRequest,
+                        TripRequest)
 from app.object_vision import baseten_ready, locate_object, scan_objects, vision_configured
 from app.store import BookingError, BookingStore
 
@@ -44,6 +45,7 @@ def create_app(settings: Settings | None = None):
     agent_budget = deque()
     real_cache = {}
     real_budget = deque()
+    live_choices = {}
 
     @asynccontextmanager
     async def lifespan(app):
@@ -127,6 +129,7 @@ def create_app(settings: Settings | None = None):
                 "agent_configured": bool(os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_AGENT_ID")),
                 "preferences_configured": bool(os.getenv("SURREAL_URL")),
                 "real_times_configured": bool(os.getenv("ANCHOR_API_KEY")),
+                "trips_configured": bool(os.getenv("SURREAL_URL")),
                 "object_memory_configured": baseten_ready(settings) and bool(os.getenv("SURREAL_URL"))}
 
     @app.post("/api/search")
@@ -231,11 +234,10 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/api/real-search")
     async def real_search(body: RealSearchRequest, owner: str = Depends(session)):
-        if body.category not in REAL_SOURCES:
-            raise HTTPException(422, "Real times are only available for trains, buses, and cinemas. Check the airline or venue directly.")
         if not os.getenv("ANCHOR_API_KEY"):
-            raise HTTPException(503, "Real times are not configured. Check the provider's website directly.")
-        provider, url = REAL_SOURCES[body.category]
+            raise HTTPException(503, "Live times are not configured. Check the provider's website directly.")
+        if body.category in {"flight", "train", "bus"} and not body.destination:
+            raise HTTPException(422, "Say where you're going, then I'll check live times.")
         key = (body.category, body.origin.lower(), body.destination.lower(), body.date)
         now = time.monotonic()
         cached = real_cache.get(key)
@@ -244,24 +246,65 @@ def create_app(settings: Settings | None = None):
                 real_budget.popleft()
             # Each lookup runs a cloud browser agent; bound cost per session and overall.
             if len(real_budget) >= 12 or sum(1 for stamp, token in real_budget if token == owner and stamp > now - 600) >= 3:
-                raise HTTPException(429, "Real-time lookup limit reached. Try again later or check the provider directly.")
+                raise HTTPException(429, "Live lookup limit reached. Try again later or check the provider directly.")
             real_budget.append((now, owner))
             try:
-                with operation("faith.real_search", provider="anchor", category=body.category):
+                with operation("faith.real_search", provider="anchor", category=body.category) as span:
                     async with access_slots:
-                        found = await real_times(body.category, body.origin, body.destination, body.date.isoformat())
-                summary = str(found.get("result") or "").replace("**", "").strip()
-                if found.get("status") != "success" or not summary:
-                    raise ValueError("Empty result")
+                        found = await asyncio.wait_for(
+                            live_search(body.category, body.origin, body.destination, body.date.isoformat()), timeout=110)
+                    span.set_attribute("results.count", len(found[2]) if found else 0)
             except Exception:
-                raise HTTPException(502, f"Couldn't read real times from {provider} right now. Nothing was booked.") from None
+                found = None
+            if not found:
+                raise HTTPException(502, "Couldn't get live times right now. Nothing was booked.")
             if len(real_cache) > 200:
                 real_cache.clear()
-            cached = (now, summary[:3000])
+            cached = (now, *found)
             real_cache[key] = cached
-        return {"provider": provider, "source": url, "summary": cached[1], "verified": False, "cached": cached[0] != now,
-                "notice": f"AI reading of {provider}'s public website. Unverified and may be out of date. "
-                          f"Faith only books demo tickets; buy real tickets from {provider} directly."}
+        stamp, provider, link, options = cached
+        if len(live_choices) > 500:
+            live_choices.clear()
+        mine = live_choices.setdefault(owner, {})
+        if len(mine) > 50:
+            mine.clear()
+        listed = []
+        for option in options:
+            option_id = "live-" + secrets.token_hex(4)
+            mine[option_id] = {**option, "provider": provider, "link": link, "category": body.category,
+                               "date": body.date.isoformat(), "origin": body.origin, "destination": body.destination}
+            listed.append({"option_id": option_id, "provider": provider, **option})
+        return {"provider": provider, "source": link, "options": listed, "verified": False, "cached": stamp != now,
+                "notice": f"Live results read from {provider}'s public website. Unverified. "
+                          f"Faith can't pay for tickets; finish booking on {provider}."}
+
+    def trips_ready():
+        if not os.getenv("SURREAL_URL"):
+            raise HTTPException(503, "Saving trips is not configured, so nothing was saved.")
+
+    @app.post("/api/trips", status_code=201)
+    async def post_trip(body: TripRequest, owner: str = Depends(session)):
+        trip = live_choices.get(owner, {}).get(body.option_id)
+        if not trip:
+            raise HTTPException(404, "Choose an option from the latest live search first.")
+        trips_ready()
+        try:
+            with operation("faith.trip", action="save", category=trip["category"]):
+                await asyncio.wait_for(save_trip(owner, trip), timeout=5)
+        except Exception:
+            raise HTTPException(502, "Couldn't save the trip right now. Nothing was bought.") from None
+        return {"saved": True, "trip": trip, "paid": False,
+                "say": "I saved this trip. Faith can't pay for tickets yet, so I've kept the provider link to finish booking."}
+
+    @app.get("/api/trips")
+    async def get_trips(owner: str = Depends(session)):
+        trips_ready()
+        try:
+            with operation("faith.trip", action="read"):
+                trips = await asyncio.wait_for(load_trips(owner), timeout=5)
+        except Exception:
+            raise HTTPException(502, "Saved trips are unavailable right now.") from None
+        return {"trips": trips}
 
     def surreal_ready():
         if not os.getenv("SURREAL_URL"):

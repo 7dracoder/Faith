@@ -3,9 +3,10 @@ import ElevenLabs
 import Foundation
 import UIKit
 
-/// The ElevenLabs voice agent that books demo tickets. Its tools run here, against the
-/// Faith backend; the agent never sees session tokens. Booking needs a hold, or the
-/// user's own spoken yes.
+/// The ElevenLabs voice agent. It reads live options from provider sites, and falls back to
+/// practice (demo) tickets only when that fails. Faith can't pay: choosing a live option saves
+/// the trip and its provider link. Its tools run here, against the Faith backend; the agent
+/// never sees session tokens. Choosing or booking needs a hold, or the user's own spoken yes.
 @MainActor
 final class BookingAgent: ObservableObject {
     enum Phase: Equatable { case idle, connecting, active }
@@ -14,7 +15,14 @@ final class BookingAgent: ObservableObject {
     @Published private(set) var speaking = false
     @Published private(set) var lastLine = ""
     @Published private(set) var quote: TicketQuote?
+    /// A live option waiting for hold to choose.
+    @Published private(set) var liveChoice: LiveOption?
+    @Published private(set) var savedTrip: SavedTrip?
+    /// Which results the conversation is on: live from a provider, or practice tickets.
+    @Published private(set) var source: Source = .none
     @Published private(set) var busy = false
+
+    enum Source: Equatable { case none, live(provider: String), practice }
 
     /// The agent asked to find an object: the app switches to the finder.
     var onFindObject: ((String) -> Void)?
@@ -27,6 +35,7 @@ final class BookingAgent: ObservableObject {
     private var startTask: Task<Void, Never>?
     private var handledCalls = Set<String>()
     private var offers: [TicketOffer] = []
+    private var liveOptions: [LiveOption] = []
     private var search = TicketSearch()
     private var confirmationKey = UUID().uuidString
     /// Messages that existed when the quote was proposed; a spoken yes must come after them.
@@ -37,6 +46,7 @@ final class BookingAgent: ObservableObject {
     }
 
     var isOn: Bool { phase != .idle }
+    var hasChoice: Bool { quote != nil || liveChoice != nil }
 
     /// `intro` plays before connecting (the "Booking assistant" announcement).
     func start(with request: String, intro: (() async -> Void)? = nil) {
@@ -74,10 +84,24 @@ final class BookingAgent: ObservableObject {
         finish()
     }
 
-    /// Hold for 1.5 seconds: book the proposed quote.
+    /// Hold for 1.5 seconds: save the live option, or book the practice quote.
     func acceptQuote() {
-        guard quote != nil, !busy else { return }
+        guard hasChoice, !busy else { return }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+        if liveChoice != nil {
+            Task {
+                let context: String
+                do {
+                    let reply = try await saveChosenTrip()
+                    context = "The user held the screen to choose. Faith saved the trip but can't pay for it. Say exactly: \(reply.say)"
+                } catch {
+                    context = "Saving failed: \(error.localizedDescription) Nothing was saved or bought. Offer to try again."
+                }
+                try? await conversation?.updateContext(context)
+                try? await conversation?.sendMessage("I held the screen to choose it.")
+            }
+            return
+        }
         Task {
             let context: String
             do {
@@ -93,8 +117,9 @@ final class BookingAgent: ObservableObject {
 
     /// Double tap: reject this option and hear the next one.
     func rejectQuote() {
-        guard quote != nil else { return }
+        guard hasChoice else { return }
         quote = nil
+        liveChoice = nil
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
         Task { try? await conversation?.sendMessage("No, not that one. Please tell me the next available option.") }
     }
@@ -128,7 +153,11 @@ final class BookingAgent: ObservableObject {
         subscriptions.removeAll()
         conversation = nil
         quote = nil
+        liveChoice = nil
+        savedTrip = nil
+        source = .none
         offers = []
+        liveOptions = []
         handledCalls = []
         speaking = false
         phase = .idle
@@ -152,7 +181,9 @@ final class BookingAgent: ObservableObject {
             case "propose_booking": result = try await proposeBooking(parameters)
             case "confirm_booking": result = try await confirmBySpeech()
             case "check_venue_accessibility": result = try await checkAccessibility()
-            case "check_real_times": result = try await checkRealTimes(parameters)
+            case "search_live_tickets": result = try await searchLiveTickets(parameters)
+            case "choose_live_option": result = try chooseLiveOption(parameters)
+            case "save_trip": result = try await saveTripBySpeech()
             case "remember_preferences": result = try await rememberPreferences(parameters)
             case "get_preferences": result = ["remembered": try await client.preferences().summary]
             case "forget_preferences":
@@ -187,6 +218,8 @@ final class BookingAgent: ObservableObject {
         search = next
         offers = response.offers
         quote = nil
+        liveChoice = nil
+        source = .practice
         return ["notice": response.notice, "options": offers.prefix(5).map { offer in
             ["offer_id": offer.id, "what": offer.title, "operator": offer.operator, "from": offer.origin,
              "to": offer.destination, "date": offer.date, "departs": offer.departure, "arrives": offer.arrival,
@@ -203,6 +236,7 @@ final class BookingAgent: ObservableObject {
         let next: TicketQuote = try await client.request("quotes", method: "POST",
                                                          body: Review(offerId: offer.id, passengers: search.passengers, preferences: search.preferences))
         quote = next
+        liveChoice = nil
         confirmationKey = UUID().uuidString
         quoteMessageCount = conversation?.messages.count ?? 0
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -240,16 +274,55 @@ final class BookingAgent: ObservableObject {
         return ["provider": info.provider, "summary": String(info.summary.prefix(1500)), "notice": info.notice]
     }
 
-    private func checkRealTimes(_ parameters: [String: Any]) async throws -> [String: Any] {
+    private func searchLiveTickets(_ parameters: [String: Any]) async throws -> [String: Any] {
         let category = parameters["category"] as? String ?? ""
         let origin = String((parameters["origin"] as? String ?? "").prefix(60))
         let destination = String((parameters["destination"] as? String ?? "").prefix(80))
         let date = parameters["date"] as? String ?? ""
-        guard ["train", "bus", "cinema"].contains(category), DateFormatter.faithDate.date(from: date) != nil else {
-            throw FaithAPIError.server("Real times are only available for trains, buses, and cinemas, with a YYYY-MM-DD date.")
+        guard ["flight", "train", "bus", "cinema", "event"].contains(category), DateFormatter.faithDate.date(from: date) != nil else {
+            throw FaithAPIError.server("Use a kind of ticket (flight, train, bus, cinema, or event) and a YYYY-MM-DD date.")
         }
-        let times = try await client.realTimes(category: category, origin: origin, destination: destination, date: date)
-        return ["provider": times.provider, "summary": String(times.summary.prefix(1500)), "notice": times.notice]
+        let results = try await client.liveSearch(category: category, origin: origin, destination: destination, date: date)
+        liveOptions = results.options
+        liveChoice = nil
+        quote = nil
+        source = .live(provider: results.provider)
+        return ["provider": results.provider, "notice": results.notice, "options": results.options.map { option in
+            ["option_id": option.optionId, "provider": option.provider, "what": option.what, "departs": option.departs,
+             "arrives": option.arrives ?? "", "duration": option.duration ?? "", "price": option.price ?? "price not shown"]
+        }]
+    }
+
+    private func chooseLiveOption(_ parameters: [String: Any]) throws -> [String: Any] {
+        guard let id = parameters["option_id"] as? String, let option = liveOptions.first(where: { $0.optionId == id }) else {
+            throw FaithAPIError.server("Use an option_id from the latest search_live_tickets result.")
+        }
+        liveChoice = option
+        quote = nil
+        quoteMessageCount = conversation?.messages.count ?? 0
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        return ["ready_to_choose": true, "option": option.spoken,
+                "next_step": "Say the option once more, then: hold the screen for a moment to choose it, or double tap to hear another option. They can also say yes or no."]
+    }
+
+    private func saveTripBySpeech() async throws -> [String: Any] {
+        guard liveChoice != nil else { throw FaithAPIError.server("Nothing is waiting to be chosen. Call choose_live_option first.") }
+        let reply = conversation?.messages.dropFirst(quoteMessageCount).last(where: { $0.role == .user })?.content ?? ""
+        guard Self.saidYes(reply) else {
+            throw FaithAPIError.server("The user has not clearly said yes. Ask them to say yes, or hold the screen to choose.")
+        }
+        let saved = try await saveChosenTrip()
+        return ["saved": true, "paid": false, "say": saved.say]
+    }
+
+    private func saveChosenTrip() async throws -> TripReply {
+        guard let liveChoice else { throw FaithAPIError.server("Nothing is waiting to be chosen.") }
+        busy = true
+        defer { busy = false }
+        let reply = try await client.saveTrip(optionId: liveChoice.optionId)
+        self.liveChoice = nil
+        savedTrip = reply.trip
+        return reply
     }
 
     private func rememberPreferences(_ parameters: [String: Any]) async throws -> [String: Any] {

@@ -7,9 +7,9 @@
 Faith is an iPhone app for blind and low-vision people. There is one screen, and the whole screen is the button: **hold anywhere and speak.**
 
 - Say an object, like “where’s my mug”, and Faith finds it with the camera, then guides you to it with sound that comes from the object’s direction.
-- Say a ticket request, like “book a train to Boston tomorrow”, and a calm voice agent helps you choose and book a flight, train, bus, cinema, or event ticket.
+- Say a ticket request, like “book a train to Boston tomorrow”, and a calm voice agent reads you live options and prices from real provider websites for flights, trains, buses, cinemas, and events.
 
-All bookable tickets are fictional demo tickets. No payment, real booking, or admission is ever issued.
+Faith can’t pay for tickets. Choosing a live option saves the trip and the provider’s link so you can finish booking there. Only if live results fail does it offer fictional practice tickets, and it says so. No payment, real booking, or admission is ever issued by Faith.
 
 The object finder uses ARKit, LiDAR depth when available, AirPods head tracking, haptics, and recorded voice lines. Faith only sends pictures after you ask, plus the object-memory snapshots below, which are announced once and can be turned off by voice. Pictures go through Faith’s backend to a vision model, so no provider key lives on the phone.
 
@@ -22,20 +22,21 @@ The object finder uses ARKit, LiDAR depth when available, AirPods head tracking,
 1. Hold and say the object, like “where did I leave my keys”. Let go.
 2. If Faith has seen it, it says so, for example “I last saw your keys on the kitchen counter, 3 minutes ago.” If that spot was measured since the camera last started, it then guides you there.
 3. Otherwise the camera view is sent as soon as you let go (asking is the consent), and Faith says “Item found, navigating” or “Item not found, please turn”.
-4. Follow the sound. Say “found”, or use the VoiceOver Magic Tap, when you have it.
+4. Follow the sound. When the phone is held at the object (within about 25 cm for half a second), Faith rings a bright chime, vibrates, says “Found it”, and goes back to the hold-to-talk screen. You can also say “found”, or use the VoiceOver Magic Tap.
 
 **Object memory.** While the finder is open and the camera is tracking, Faith takes a snapshot every few seconds, but only when the view has changed (you moved or turned) or about 30 seconds have passed. The pictures stay on the phone: the last 200, for at most 24 hours, excluded from iCloud backup. Each snapshot goes once to the vision model to list the objects in it, and is not stored on the server. Only object names, a short place description, the time, and the AR position go to SurrealDB, keyed by a hash of your session. A copy also stays on the phone, so it works offline. Faith announces this once on first launch. Say **“stop remembering”** or **“start remembering”** to turn it off or on, and **“forget what you’ve seen”** to delete the pictures and every remembered object. Capture never runs on the booking screen or in the background.
 
 **Booking a ticket**
 
 1. Hold and say what you want (“book”, “ticket”, “train”, “flight”, “bus”, “movie”, “concert”…). Faith says “Booking assistant” and switches to the mint **Booking** screen; just talk.
-2. When it offers an option, it says the total including fees. **Hold the screen for 1.5 seconds to book**, or **double tap to hear another option**. Saying “yes” or “no” also works, but the app itself checks that *your own words* after the offer clearly say yes; the agent cannot book on its own.
-3. Ask for “real times” and the agent reads real departures or showtimes and prices from Amtrak, Greyhound, or AMC. This takes about a minute and is read-only: Faith still only books demo tickets.
+2. It says “Checking live times, this takes about a minute”, then reads real options one at a time: provider, time, and price. Sources: Google Flights (flights), Wanderu (trains, including Amtrak), Greyhound with Wanderu as backup (buses), Fandango (cinema showtimes; prices usually not shown), and Eventbrite (events).
+3. **Hold the screen for 1.5 seconds to choose** an option, or **double tap to hear another**. Faith saves it as your trip and says “I saved this trip. Faith can’t pay for tickets yet, so I’ve kept the provider link to finish booking.” An **Open provider** button and VoiceOver action then open that site. Saying “yes” or “no” also works, but the app itself checks that *your own words* clearly say yes; the agent cannot choose on its own.
+   If live times fail, Faith says “I couldn’t get live times, here’s a practice option” and offers a fictional practice ticket instead, booked the same way and clearly marked as not valid for travel.
 4. Ask “how accessible is it really?” and it summarizes the provider’s public accessibility page. That summary is unverified.
 5. Say “remember that I live in Boston and need step-free access” and it saves those preferences for next time. It only saves when you ask or say yes, and “forget my preferences” deletes them.
 6. Ask it to find an object and it switches to the finder.
 
-VoiceOver: double-tap and hold to talk or to book. Rotor actions include **Stop/Start remembering objects**, **Forget what you’ve seen**, **Book it**, **Hear another option**, and **End conversation**. Every spoken state also appears as large on-screen text.
+VoiceOver: double-tap and hold to talk or to book. Rotor actions include **Stop/Start remembering objects**, **Forget what you’ve seen**, **Choose it** (or **Book practice ticket**), **Hear another option**, **Open provider to finish booking**, and **End conversation**. Every spoken state also appears as large on-screen text.
 
 ## Sponsors and how Faith uses them
 
@@ -98,7 +99,7 @@ Backend tests mock every provider. iOS unit tests use the finder’s mock camera
 
 ## Limitations
 
-- Tickets are demo tickets. Real times and accessibility summaries are AI readings of public websites: unverified, possibly out of date, and never bookable through Faith.
+- Faith can’t buy tickets. Live options and accessibility summaries are AI readings of public websites: unverified, possibly out of date, and never bought through Faith. Practice tickets are fictional. Ticketmaster, SeatGeek, AMC, and Amtrak’s own site showed the cloud browser nothing, so they aren’t used.
 - Object guidance is experimental. It is not obstacle detection or a safe route, objects may have moved, and the vision model can be wrong.
 - The camera, depth, spatial audio, head tracking, and the voice agent’s audio still need testing on a real iPhone with blind participants.
 - Rate limits and sessions are single-process demo guards, not production accounts or billing controls.

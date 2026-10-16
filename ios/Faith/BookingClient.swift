@@ -110,11 +110,16 @@ final class BookingClient {
         struct Lookup: Encodable { let category: TicketCategory; let preferences: AccessPreferences }
         return try await request("access-info", method: "POST", body: Lookup(category: category, preferences: preferences), timeout: 100)
     }
-    func realTimes(category: String, origin: String, destination: String, date: String) async throws -> RealTimes {
+    func liveSearch(category: String, origin: String, destination: String, date: String) async throws -> LiveResults {
         try await start()
         struct Lookup: Encodable { let category: String; let origin: String; let destination: String; let date: String }
         return try await request("real-search", method: "POST",
                                  body: Lookup(category: category, origin: origin, destination: destination, date: date), timeout: 115)
+    }
+    func saveTrip(optionId: String) async throws -> TripReply {
+        try await start()
+        struct Choice: Encodable { let optionId: String }
+        return try await request("trips", method: "POST", body: Choice(optionId: optionId), timeout: 10)
     }
     func preferences() async throws -> SavedPreferencesReply {
         try await start()

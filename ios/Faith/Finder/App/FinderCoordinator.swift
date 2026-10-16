@@ -42,6 +42,8 @@ final class FinderCoordinator: ObservableObject {
     private var roundTimerStartedAt: Date?
     private var requestTask: Task<Void, Never>?
     private var errorResetTask: Task<Void, Never>?
+    private var foundResetTask: Task<Void, Never>?
+    private var arrival = ArrivalDetector()
     private var healthTask: Task<Void, Never>?
     private var lastDebugPublish = Date.distantPast
     private let debugPublishInterval: TimeInterval = 0.1
@@ -160,6 +162,8 @@ final class FinderCoordinator: ObservableObject {
         setupWatchTask = nil
         memoryTask?.cancel()
         memoryTask = nil
+        foundResetTask?.cancel()
+        foundResetTask = nil
         stopGuidance()
         environment.perception.pause()
         environment.headTracker.stop()
@@ -401,6 +405,7 @@ final class FinderCoordinator: ObservableObject {
         logger.info("Round found in \(duration, privacy: .public) s, mode \(round.mode.rawValue, privacy: .public)")
         state = .found(result: result)
         liveFeed?.roundFound(result)
+        returnToReadyAfterFound(result.id)
 
         let samples = roundSamples
         roundSamples = []
@@ -410,6 +415,19 @@ final class FinderCoordinator: ObservableObject {
                 await environment.telemetry.reportSamples(samples)
             }
             status.pendingUploads = environment.telemetry.pendingCount
+        }
+    }
+
+    /// "Found it" once the chime has rung, then back to the hold-to-talk screen.
+    private func returnToReadyAfterFound(_ id: UUID) {
+        foundResetTask?.cancel()
+        foundResetTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            guard let self, !Task.isCancelled else { return }
+            await environment.speech.speak("Found it")
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, case .found(let result) = state, result.id == id else { return }
+            state = readyOrSetup
         }
     }
 
@@ -876,6 +894,7 @@ final class FinderCoordinator: ObservableObject {
         liveFeed?.roundStarted(round, fromMemory: fromMemory)
 
         // The round timer starts with the guidance sound, so vision latency never counts.
+        arrival.reset()
         environment.audio.setTarget(target)
         roundTimerStartedAt = Date()
         state = .guiding(target: target, round: round)
@@ -889,6 +908,7 @@ final class FinderCoordinator: ObservableObject {
         debug.cue = nil
         lockedEarPosition = nil
         isDetectorActive = false
+        arrival.reset()
         proximityHaptics.stop()
     }
 
@@ -1061,6 +1081,11 @@ final class FinderCoordinator: ObservableObject {
 
             let distance = simd_distance(body.position, target.worldPosition)
             phoneDistance = distance
+            if arrival.update(phoneDistance: distance, at: Date()) {
+                logger.info("Reached the object, phone \(distance, privacy: .public) m away")
+                finishRound(endedAt: Date())
+                return
+            }
             parameters = applyDetector(to: parameters, phoneDistance: distance)
 
             environment.audio.updateCue(parameters)

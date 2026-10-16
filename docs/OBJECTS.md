@@ -5,7 +5,8 @@
 1. Hold anywhere and say the object, like “where did I leave my keys”. Let go.
 2. Faith looks in object memory first (the phone’s copy, then the backend’s). If found it says, for example, “I last saw your keys on the kitchen counter, 3 minutes ago.” If the position was measured in the current AR session it says “Navigating” and guides you there; otherwise the words are all it can honestly give.
 3. If memory has nothing, the view captured when you let go is sent right away (asking is the consent). Faith says “Searching”, then “Item found, navigating” or “Item not found, please turn”.
-4. The sound comes from the object’s direction and pulses faster as you face it. AirPods head tracking steers it when available. Say “found” when you have it.
+4. The sound comes from the object’s direction and pulses faster as you face it. AirPods head tracking steers it when available.
+5. When the phone stays within 25 cm of the object for half a second, Faith rings a bright bell, gives a success vibration, stops the guidance sound, says “Found it”, and returns to the hold-to-talk screen. Saying “found” does the same.
 
 ## Object memory
 

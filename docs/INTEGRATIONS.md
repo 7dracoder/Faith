@@ -4,7 +4,7 @@ All keys live only in the gitignored `backend/.env` (or as Daytona sandbox envir
 
 ## ElevenLabs
 
-`scripts/elevenlabs_agent.py` creates or updates the private agent (Sarah voice, `eleven_flash_v2`, steady and slightly slow) and its nine client tools, and writes `ELEVENLABS_AGENT_ID` to `backend/.env`. Re-run it after changing the prompt or tools. `POST /api/agent/session` returns a short-lived conversation token (30 per hour overall, 10 per session). The finder’s recorded lines come from `scripts/make_voice_clips.py`, generated once and shipped as audio files.
+`scripts/elevenlabs_agent.py` creates or updates the private agent (Sarah voice, `eleven_flash_v2`, steady and slightly slow) and its eleven client tools, and writes `ELEVENLABS_AGENT_ID` to `backend/.env`. Re-run it after changing the prompt or tools. `POST /api/agent/session` returns a short-lived conversation token (30 per hour overall, 10 per session). The finder’s recorded lines come from `scripts/make_voice_clips.py`, generated once and shipped as audio files.
 
 ## Baseten
 
@@ -19,11 +19,14 @@ Set `SURREAL_URL`, `SURREAL_NAMESPACE`, `SURREAL_DATABASE`, `SURREAL_USERNAME`, 
 
 Without `SURREAL_URL`, preference endpoints return 503 and nothing is saved.
 
+`trip:<sha256 of session>` holds up to 20 live options the user chose: provider, what, times, price, date, places, and the provider link. `POST /api/trips` only accepts an option ID from that session's latest live search; nothing is paid.
+
 ## Anchor Browser
 
 Set `ANCHOR_API_KEY`. Two read-only uses, both on fixed sites chosen by category (the request can never supply a URL):
 
-- `POST /api/real-search`: real times and prices from Amtrak (train), Greyhound (bus), or AMC (cinema). Flights and events are declined. The task may use the site’s public search but must not log in, enter personal or payment details, add to cart, or buy. Cached 30 minutes; 3 per session per 10 minutes, 12 per hour. Results are unverified.
+- `POST /api/real-search`: live options for every category, as structured results (Anchor `output_schema`): what, departs, arrives, duration, price. Providers, tried in order: Google Flights (flight), Wanderu (train), Greyhound then Wanderu (bus), Fandango (cinema), Eventbrite (event). Places only fill the path or query of those fixed hosts. Options are cleaned, capped at five, and a price that isn't an amount (like “15% off”) is reported as not shown. The task may use the site’s public search but must not log in, enter personal or payment details, add to cart, or buy. Each task's browser session is closed afterwards, since idle sessions use up the account's browser quota. Cached 30 minutes; 3 per session per 10 minutes, 12 per hour, 2 at a time. Results are unverified.
+- Tested live and dropped because they showed the cloud browser no results: Ticketmaster, SeatGeek, Songkick, Google events, AMC, and Amtrak’s own site (Amtrak trains still come through Wanderu).
 - `POST /api/access-info`: a summary of the provider’s public accessibility page. Cached 6 hours.
 
 Prompt rules are not a sandbox, so neither result can ever become a bookable offer.

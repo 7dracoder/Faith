@@ -46,10 +46,42 @@ struct AccessInfo: Decodable, Equatable {
     let notice: String
 }
 
-struct RealTimes: Decodable, Equatable {
+/// One real option read from a provider's public site. Faith can't buy it, only save it.
+struct LiveOption: Decodable, Equatable {
+    let optionId: String
     let provider: String
-    let summary: String
+    let what: String
+    let departs: String
+    let arrives: String?
+    let duration: String?
+    let price: String?
+
+    var spoken: String { "\(provider): \(what), \(departs), \(price ?? "price not shown")" }
+}
+
+struct LiveResults: Decodable, Equatable {
+    let provider: String
+    let options: [LiveOption]
     let notice: String
+}
+
+struct SavedTrip: Decodable, Equatable {
+    let provider: String
+    let what: String
+    let departs: String
+    let price: String?
+    let link: String
+
+    /// Only the fixed provider sites the backend searches.
+    var providerURL: URL? {
+        guard let url = URL(string: link), url.scheme == "https" else { return nil }
+        return url
+    }
+}
+
+struct TripReply: Decodable {
+    let trip: SavedTrip
+    let say: String
 }
 
 /// Only what the user asked Faith to remember. Never objects, camera frames, or location.

@@ -26,7 +26,7 @@ How you speak:
 - Say times like "nine thirty in the morning" and prices like "forty two dollars".
 
 What you do:
-- Help the user book a flight, train, bus, cinema, or event ticket. All tickets are fictional demo tickets; say that once, early.
+- Help the user find a flight, train, bus, cinema, or event ticket, using live results from real provider websites.
 - Ask only for what is missing: where from, where to, which day, and how many people. Use the saved preferences when they apply; otherwise assume one person and New York as the start if they don't say.
 - If there are no saved access needs, ask once if they'd like step-free access, audio description, or a companion seat.
 
@@ -34,20 +34,33 @@ Remembering preferences:
 - You may remember only a home city, step-free access, audio description, a companion seat, and the usual number of people. Nothing else.
 - Never save anything unless the user asks you to remember it, or you ask "Would you like me to remember that for next time?" and they say yes. Then call remember_preferences with everything they want kept.
 - If they ask what you remember, call get_preferences and tell them. If they say "forget my preferences", call forget_preferences and confirm it is forgotten.
-- Call search_tickets. Then describe only the best option first: what it is, when it leaves, and the total price including fees.
-- If the user likes it, call propose_booking with its offer_id. Then say the total once more and tell them:
-  "Hold the screen for a moment to book it, or double tap to hear another option. You can also just say yes or no."
+
+Live options (always try these first):
+- First say "Checking live times, this takes about a minute." Then call search_live_tickets.
+- Read the options one at a time, best first: the provider, the time, and the price. If the price is not shown, say so.
+- If the user likes one, call choose_live_option with its option_id. Then tell them:
+  "Hold the screen for a moment to choose it, or double tap to hear another option. You can also just say yes or no."
+- If they say yes, call save_trip. Never call save_trip unless the user's own latest words clearly say yes.
+- After it is saved, say exactly: "I saved this trip. Faith can't pay for tickets yet, so I've kept the provider link to finish booking."
+- Faith cannot buy real tickets. Never say a live option is booked, bought, reserved, or paid.
+- If they say no or ask for another, read the next option. If there are none left, offer a new search.
+
+Practice tickets (only when live times fail):
+- If search_live_tickets returns an error, say "I couldn't get live times, here's a practice option." Then call search_tickets.
+- Practice tickets are fictional, not valid for travel or entry, and no payment is taken; say that once.
+- Describe the best practice option: what it is, when it leaves, and the total price including fees. If they like it, call propose_booking, say the total once more, and tell them:
+  "Hold the screen for a moment to book this practice ticket, or double tap to hear another option. You can also just say yes or no."
 - If they say yes, call confirm_booking. Never call confirm_booking unless the user's own latest words clearly say yes.
-- If they say no or ask for another, describe the next option from the same search. If there are none left, offer a new search.
-- If the user asks for real times or real prices for a train, bus, or cinema, first say "Let me check the real website, this takes about a minute." Then call check_real_times and read back at most three options. Say these are real times from the provider's website, unverified, and that Faith can only book demo tickets; to buy the real ticket they should use the provider directly. Flights and events have no real-time check; say so.
+
+Other help:
 - If the user asks how accessible that kind of trip or venue really is, say you're checking, which can take up to a minute, then call check_venue_accessibility and summarize it gently. It is an unverified summary of a public page; say so.
 - If the user asks to find an object, like their keys or a mug, call find_object with the object name.
-- Never claim a ticket is real, valid for travel, or paid. Never invent options, prices, or accessibility details that a tool did not return.
+- Never claim a practice ticket is real, valid for travel, or paid. Never invent options, prices, or accessibility details that a tool did not return.
 """
 
 TOOLS = [
     {"name": "search_tickets", "timeout": 20,
-     "description": "Search Faith's fictional demo inventory. Returns up to five options, best first.",
+     "description": "Search Faith's fictional practice inventory. Only after search_live_tickets failed. Returns up to five options, best first.",
      "parameters": {"type": "object", "required": ["category", "date"], "properties": {
          "category": {"type": "string", "enum": ["all", "flight", "train", "bus", "cinema", "event"], "description": "Kind of ticket"},
          "origin": {"type": "string", "description": "Departure city, or the user's city for cinema and events"},
@@ -59,22 +72,29 @@ TOOLS = [
          "audio_description": {"type": "boolean", "description": "Wants audio description"},
          "companion": {"type": "boolean", "description": "Needs a companion seat"}}}},
     {"name": "propose_booking", "timeout": 20,
-     "description": "Prepare a price quote for one option. The user then holds the screen, double taps, or says yes or no.",
+     "description": "Prepare a price quote for one practice option. The user then holds the screen, double taps, or says yes or no.",
      "parameters": {"type": "object", "required": ["offer_id"], "properties": {
          "offer_id": {"type": "string", "description": "The offer_id from search_tickets"}}}},
     {"name": "confirm_booking", "timeout": 20,
-     "description": "Book the proposed quote. Only after the user clearly said yes.",
+     "description": "Book the proposed practice quote. Only after the user clearly said yes.",
      "parameters": {"type": "object", "properties": {}}},
     {"name": "check_venue_accessibility", "timeout": 110,
      "description": "Look up the real provider's public accessibility page for the current kind of ticket. Slow: up to a minute.",
      "parameters": {"type": "object", "properties": {}}},
-    {"name": "check_real_times", "timeout": 120,
-     "description": "Read real departures or showtimes and prices from the provider's public website (Amtrak, Greyhound, or AMC). Read-only, never books. Slow: about a minute.",
+    {"name": "search_live_tickets", "timeout": 120,
+     "description": "Read real options and prices from provider websites (Google Flights, Wanderu, Greyhound, Fandango, or Eventbrite). Read-only, never books or pays. Slow: about a minute.",
      "parameters": {"type": "object", "required": ["category", "origin", "date"], "properties": {
-         "category": {"type": "string", "enum": ["train", "bus", "cinema"], "description": "Kind of ticket"},
-         "origin": {"type": "string", "description": "Departure city, or the user's city for cinema"},
-         "destination": {"type": "string", "description": "Arrival city, or a film name. Empty if unknown"},
+         "category": {"type": "string", "enum": ["flight", "train", "bus", "cinema", "event"], "description": "Kind of ticket"},
+         "origin": {"type": "string", "description": "Departure city, or the user's city for cinema and events"},
+         "destination": {"type": "string", "description": "Arrival city (needed for flights, trains, and buses), or a film or event name. Empty if unknown"},
          "date": {"type": "string", "description": "Date as YYYY-MM-DD"}}}},
+    {"name": "choose_live_option", "timeout": 20,
+     "description": "Get one live option ready to save. The user then holds the screen, double taps, or says yes or no.",
+     "parameters": {"type": "object", "required": ["option_id"], "properties": {
+         "option_id": {"type": "string", "description": "The option_id from search_live_tickets"}}}},
+    {"name": "save_trip", "timeout": 20,
+     "description": "Save the chosen live option and its provider link. Faith can't pay. Only after the user clearly said yes.",
+     "parameters": {"type": "object", "properties": {}}},
     {"name": "remember_preferences", "timeout": 15,
      "description": "Save the user's preferences for next time. Only after the user asked or clearly agreed.",
      "parameters": {"type": "object", "properties": {

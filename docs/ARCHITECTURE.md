@@ -10,9 +10,9 @@ flowchart LR
     B -. bounding box .-> V[Baseten Kimi-K3 vision]
     R -- tickets --> A[ElevenLabs agent]
     A -. client tools run in the app .-> B
-    B --> C[Fictional ticket catalog + SQLite]
-    B -. booking mirror, preference memory .-> S[SurrealDB]
-    B -. read-only real times, access pages .-> N[Anchor Browser]
+    B --> C[Practice ticket catalog + SQLite]
+    B -. booking mirror, preferences, saved trips, object memory .-> S[SurrealDB]
+    B -. read-only live options, access pages .-> N[Anchor Browser]
     B -. operation spans, no user text .-> Z[Arize]
     B -. optional fallback .-> W[AWS Bedrock]
 ```
@@ -27,15 +27,17 @@ The app asks the backend for a short-lived ElevenLabs conversation token, then t
 
 | Tool | Backend | Notes |
 | --- | --- | --- |
-| `search_tickets` | `POST /api/search` | Fictional inventory |
+| `search_live_tickets` | `POST /api/real-search` | Live options from fixed provider sites via Anchor, read-only |
+| `choose_live_option` | none | Shows the option for hold to choose |
+| `save_trip` | `POST /api/trips` | Saves the chosen option and provider link; only after the user's own yes |
+| `search_tickets` | `POST /api/search` | Fictional practice inventory, only when live search fails |
 | `propose_booking` | `POST /api/quotes` | Server-owned price, ten-minute expiry |
 | `confirm_booking` | `POST /api/bookings` | Only if the user’s own latest words say yes, checked in the app |
-| `check_real_times` | `POST /api/real-search` | Read-only Anchor task on Amtrak, Greyhound, or AMC |
 | `check_venue_accessibility` | `POST /api/access-info` | Read-only Anchor summary of a fixed public page |
 | `remember_preferences` / `get_preferences` / `forget_preferences` | `PUT/GET/DELETE /api/preferences` | SurrealDB; saving needs the user’s own request or yes |
 | `find_object` | none | Hands off to the finder |
 
-On the quote screen a 1.5-second hold books and a double tap asks for the next option. Booking is idempotent per quote.
+On the choice screen a 1.5-second hold saves the live trip (or books the practice ticket) and a double tap asks for the next option. Booking is idempotent per quote.
 
 ## Booking transitions
 
@@ -55,7 +57,8 @@ Sessions are anonymous bearer tokens kept in the iPhone Keychain. They are demo 
 | POST | `/api/search`, `/api/quotes`, `/api/bookings` | Demo booking flow |
 | GET | `/api/bookings` | The session’s tickets |
 | POST | `/api/bookings/{id}/cancel` | Cancel a demo ticket |
-| POST | `/api/real-search` | Real times and prices, read-only, unverified |
+| POST | `/api/real-search` | Live options for every category, read-only, unverified |
+| GET/POST | `/api/trips` | Saved live trips (chosen option and provider link) |
 | POST | `/api/access-info` | Provider accessibility summary, unverified |
 | GET/PUT/DELETE | `/api/preferences` | Preference memory |
 | POST | `/api/objects/locate` | The frame sent when the user asks, strict 2D box |

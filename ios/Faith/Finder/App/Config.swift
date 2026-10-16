@@ -23,6 +23,9 @@ enum Config {
     static let detectorExitRadiusMeters: Float = 0.38
     static let detectorTouchingMeters: Float = 0.05
     static let detectorOnTargetMeters: Float = 0.08
+    /// The phone held this close to the object for this long ends the round with the chime.
+    static let arrivalRadiusMeters: Float = 0.25
+    static let arrivalHoldSeconds: TimeInterval = 0.5
     static let detectorSlowestIntervalSeconds: Double = 0.35
     static let detectorFastestIntervalSeconds: Double = 0.06
     /// ReachLock: ears lock when within arm's reach of the object, unlock when the phone

@@ -120,9 +120,9 @@ struct UserModeView: View {
         case .locating(let utterance):
             return coordinator.memoryAnswer ?? "Finding \(utterance)."
         case .guiding(let target, _):
-            return "Follow the sound to \(target.label). Hold and say “found” when you have it."
-        case .found(let result):
-            return String(format: "Found in %.1f seconds.", result.durationSeconds)
+            return "Follow the sound to \(target.label). It chimes when you reach it, or hold and say “found”."
+        case .found:
+            return "Found it."
         case .error:
             return "Something went wrong. Hold anywhere to try again."
         }
@@ -133,7 +133,7 @@ struct UserModeView: View {
     }
 
     private var holdAccessibilityHint: String {
-        return "Say an object, or ask to book a ticket. Releasing sends the camera view to find it. Say calibrate to recenter. When you reach an object, hold and say found."
+        return "Say an object, or ask to book a ticket. Releasing sends the camera view to find it. Say calibrate to recenter. Faith chimes when you reach the object, or hold and say found."
     }
 
     private var canHoldToAsk: Bool {

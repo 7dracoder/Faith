@@ -39,6 +39,26 @@ enum DetectorCue {
     }
 }
 
+/// Reaching the object ends the round by itself. The phone has to stay inside the arrival
+/// radius for the hold time, so sweeping past the object doesn't count.
+struct ArrivalDetector {
+    private(set) var insideSince: Date?
+
+    mutating func update(phoneDistance: Float, at now: Date) -> Bool {
+        guard phoneDistance <= Config.arrivalRadiusMeters else {
+            insideSince = nil
+            return false
+        }
+        let since = insideSince ?? now
+        insideSince = since
+        return now.timeIntervalSince(since) >= Config.arrivalHoldSeconds
+    }
+
+    mutating func reset() {
+        insideSince = nil
+    }
+}
+
 /// Keeps the 3D sound steady while the user reaches with the phone. The listener's ears are
 /// derived from the phone (chest rig), so moving the phone toward the object would drag the
 /// sound around. Walking still updates the ears; once the ears are within arm's reach of the

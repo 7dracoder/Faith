@@ -117,12 +117,12 @@ struct AgentView: View {
                 .font(.largeTitle.weight(.heavy))
                 .padding(.top, 24)
                 Spacer()
-                if let quote = agent.quote {
+                if let choice = choiceText {
                     VStack(spacing: FinderTheme.regularSpacing) {
                         Image(systemName: "hand.tap.fill").font(.system(size: 64, weight: .bold))
-                        Text("Hold to book · Double tap for another")
+                        Text(title)
                             .font(.system(size: 34, weight: .heavy)).multilineTextAlignment(.center)
-                        Text("\(quote.offer.title), \(ticketMoney(quote.totalMinor)) total")
+                        Text(choice)
                             .font(.title2.bold()).multilineTextAlignment(.center)
                     }
                     .foregroundStyle(FinderTheme.mint)
@@ -137,8 +137,12 @@ struct AgentView: View {
                 }
                 Text(agent.lastLine).font(.title3).multilineTextAlignment(.center).lineLimit(8)
                     .padding(.horizontal, FinderTheme.regularSpacing)
+                if let trip = agent.savedTrip, let url = trip.providerURL {
+                    Link("Open \(trip.provider) to finish booking", destination: url)
+                        .font(.headline).frame(minHeight: FinderTheme.minimumTouchSize)
+                }
                 Spacer()
-                Text("Demo tickets only. Not valid for travel or entry. No payment is taken.")
+                Text(notice)
                     .font(.footnote.weight(.semibold)).multilineTextAlignment(.center)
                 Button("End conversation") { agent.end() }
                     .font(.headline).frame(minHeight: FinderTheme.minimumTouchSize).padding(.bottom, 32)
@@ -151,28 +155,52 @@ struct AgentView: View {
         .onLongPressGesture(minimumDuration: Config.holdToAcceptSeconds) {
             agent.acceptQuote()
         } onPressingChanged: { pressing in
-            if pressing, agent.quote != nil { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+            if pressing, agent.hasChoice { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Booking. " + title)
-        .accessibilityValue(agent.quote.map { "\($0.offer.title), \(ticketMoney($0.totalMinor)) total. Demo ticket." } ?? "")
-        .accessibilityHint(agent.quote != nil ? "Double-tap and hold to book. Double-tap for another option." : "Just talk. Two-finger double-tap ends the conversation.")
+        .accessibilityValue(choiceText.map { "\($0). \(agent.quote != nil ? "Practice ticket." : "Live option.")" } ?? "")
+        .accessibilityHint(agent.hasChoice ? "Double-tap and hold to \(agent.liveChoice != nil ? "choose" : "book"). Double-tap for another option." : "Just talk. Two-finger double-tap ends the conversation.")
         .accessibilityAction { agent.rejectQuote() }
         .accessibilityAction(.magicTap) { agent.end() }
         .accessibilityActions {
-            if agent.quote != nil {
-                Button("Book it") { agent.acceptQuote() }
+            if agent.liveChoice != nil {
+                Button("Choose it") { agent.acceptQuote() }
                 Button("Hear another option") { agent.rejectQuote() }
+            } else if agent.quote != nil {
+                Button("Book practice ticket") { agent.acceptQuote() }
+                Button("Hear another option") { agent.rejectQuote() }
+            }
+            if let trip = agent.savedTrip, let url = trip.providerURL {
+                Button("Open \(trip.provider) to finish booking") { UIApplication.shared.open(url) }
             }
             Button("End conversation") { agent.end() }
         }
     }
 
+    private var choiceText: String? {
+        if let choice = agent.liveChoice { return choice.spoken }
+        if let quote = agent.quote { return "Practice: \(quote.offer.title), \(ticketMoney(quote.totalMinor)) total" }
+        return nil
+    }
+
     private var title: String {
+        if agent.liveChoice != nil { return "Hold to choose · Double tap for another" }
         if agent.quote != nil { return "Hold to book · Double tap for another" }
         switch agent.phase {
         case .connecting: return "Booking assistant, connecting…"
         default: return agent.speaking ? "Faith is speaking" : "Faith is listening"
+        }
+    }
+
+    private var notice: String {
+        switch agent.source {
+        case .live(let provider):
+            return "Live times from \(provider), unverified. Faith can't pay for tickets: it saves your trip and the \(provider) link."
+        case .practice:
+            return "Practice options are fictional. Not valid for travel or entry. No payment is taken."
+        case .none:
+            return "Faith reads live times from public sites. It can't pay for tickets."
         }
     }
 

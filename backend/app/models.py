@@ -225,3 +225,7 @@ class RealSearchRequest(StrictModel):
         if not date.today() <= value <= date.today() + timedelta(days=366):
             raise ValueError("Choose a date between today and one year from now.")
         return value
+
+
+class TripRequest(StrictModel):
+    option_id: str = Field(pattern=r"^live-[0-9a-f]{8}$")
