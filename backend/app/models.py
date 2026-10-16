@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+import math
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Literal
 
@@ -95,6 +96,17 @@ class SpeechRequest(StrictModel):
     consent: Literal[True]
 
 
+def bounded_jpeg(value):
+    import base64
+    try:
+        image = base64.b64decode(value, validate=True)
+    except ValueError:
+        raise ValueError("Use a base64 JPEG camera frame.") from None
+    if len(image) > 1_000_000 or not image.startswith(b"\xff\xd8\xff") or not image.endswith(b"\xff\xd9"):
+        raise ValueError("Use a JPEG camera frame under 1 MB.")
+    return value
+
+
 class ObjectLocateRequest(StrictModel):
     object_query: str = Field(min_length=2, max_length=120)
     jpeg_base64: str = Field(min_length=16, max_length=1_400_000, repr=False)
@@ -102,15 +114,18 @@ class ObjectLocateRequest(StrictModel):
 
     @field_validator("jpeg_base64")
     @classmethod
-    def bounded_jpeg(cls, value):
-        import base64
-        try:
-            image = base64.b64decode(value, validate=True)
-        except ValueError:
-            raise ValueError("Use a base64 JPEG camera frame.") from None
-        if len(image) > 1_000_000 or not image.startswith(b"\xff\xd8\xff") or not image.endswith(b"\xff\xd9"):
-            raise ValueError("Use a JPEG camera frame under 1 MB.")
-        return value
+    def jpeg(cls, value):
+        return bounded_jpeg(value)
+
+
+class ObjectScanRequest(StrictModel):
+    """One memory snapshot. The image is only forwarded to the vision model, never stored."""
+    jpeg_base64: str = Field(min_length=16, max_length=1_400_000, repr=False)
+
+    @field_validator("jpeg_base64")
+    @classmethod
+    def jpeg(cls, value):
+        return bounded_jpeg(value)
 
 
 class ObjectBox(StrictModel):
@@ -140,6 +155,50 @@ class ObjectLocationAnswer(StrictModel):
         if self.found and not self.label:
             raise ValueError("A found object needs a label.")
         return self
+
+
+OBJECT_LABEL = r"^[A-Za-z][A-Za-z0-9 '-]*$"
+OBJECT_PLACE = r"^[A-Za-z0-9][A-Za-z0-9 .,'&-]*$"
+
+
+class SeenObject(StrictModel):
+    label: str = Field(max_length=200)
+    box: ObjectBox
+    confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
+    place: str | None = Field(default="", max_length=400)
+
+
+class ObjectScanAnswer(StrictModel):
+    objects: list[SeenObject] = Field(default_factory=list, max_length=40)
+
+
+class MemoryEntry(StrictModel):
+    """What memory keeps about one object: never the picture, the session, or the user's words."""
+    label: str = Field(min_length=2, max_length=60, pattern=OBJECT_LABEL)
+    place: str = Field(default="", max_length=120, pattern=r"^$|" + OBJECT_PLACE)
+    seen_at: datetime
+    position: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    ar_session: str | None = Field(default=None, pattern=r"^[0-9A-Fa-f-]{36}$")
+
+    @field_validator("position")
+    @classmethod
+    def bounded_position(cls, value):
+        if value is not None and not all(math.isfinite(v) and abs(v) <= 1000 for v in value):
+            raise ValueError("Positions are meters in AR world space.")
+        return value
+
+    @field_validator("seen_at")
+    @classmethod
+    def recent(cls, value):
+        now = datetime.now(timezone.utc)
+        value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if not now - timedelta(days=7) <= value <= now + timedelta(minutes=5):
+            raise ValueError("Sightings must be from the last week.")
+        return value
+
+
+class MemoryUpdate(StrictModel):
+    entries: list[MemoryEntry] = Field(min_length=1, max_length=20)
 
 
 PLACE = r"^[A-Za-z][A-Za-z .,'&:-]*$"

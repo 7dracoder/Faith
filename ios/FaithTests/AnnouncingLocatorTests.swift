@@ -179,7 +179,6 @@ final class AnnouncingLocatorTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         backend.onResult?("where's my mug", true)
         try await Task.sleep(nanoseconds: 200_000_000)
-        coordinator.approvePendingFrame()
         try await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertEqual(locator.utterances, ["where's my mug"])
@@ -205,7 +204,6 @@ final class AnnouncingLocatorTests: XCTestCase {
         backend.onResult?("find my mug", true)
         coordinator.endVoiceRequest()
         try await Task.sleep(nanoseconds: 200_000_000)
-        coordinator.approvePendingFrame()
         try await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertEqual(prompts.played, [.notFoundTurn])

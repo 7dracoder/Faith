@@ -8,7 +8,7 @@ All keys live only in the gitignored `backend/.env` (or as Daytona sandbox envir
 
 ## Baseten
 
-Set `BASETEN_API_KEY` and `BASETEN_VISION_MODEL=moonshotai/Kimi-K3`. `POST /api/objects/locate` sends one consented JPEG as a data URL to Baseten’s OpenAI-compatible API, with reasoning off (`chat_template_kwargs.thinking=false`) so answers return in a few seconds. The response must be a strict 2D box; confidence below 0.65 counts as not found. Frames are never stored, logged, mirrored, or traced. Limits: 4 per session per minute, 20 per hour, 2 at a time.
+Set `BASETEN_API_KEY` and `BASETEN_VISION_MODEL=moonshotai/Kimi-K3`. `POST /api/objects/locate` sends the JPEG captured when the user asks as a data URL to Baseten’s OpenAI-compatible API, with reasoning off (`chat_template_kwargs.thinking=false`) so answers return in a few seconds. The response must be a strict 2D box; confidence below 0.65 counts as not found. Frames are never stored, logged, mirrored, or traced. Limits: 4 per session per minute, 20 per hour, 2 at a time. `POST /api/objects/scan` (object memory) uses the same model to list visible objects with a short place description, drops people and low-confidence items, stores nothing, and has its own limits: 20 per session per minute, 600 per hour, 2 at a time.
 
 ## SurrealDB
 

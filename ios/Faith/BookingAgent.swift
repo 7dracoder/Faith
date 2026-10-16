@@ -38,12 +38,15 @@ final class BookingAgent: ObservableObject {
 
     var isOn: Bool { phase != .idle }
 
-    func start(with request: String) {
+    /// `intro` plays before connecting (the "Booking assistant" announcement).
+    func start(with request: String, intro: (() async -> Void)? = nil) {
         guard phase == .idle else { return }
         phase = .connecting
-        lastLine = "Connecting you to Faith…"
+        lastLine = "Booking assistant. Connecting you to Faith…"
         startTask = Task {
             do {
+                await intro?()
+                try Task.checkCancellation()
                 let session = try await client.agentSession()
                 let conversation = try await ElevenLabs.startConversation(
                     conversationToken: session.conversationToken,

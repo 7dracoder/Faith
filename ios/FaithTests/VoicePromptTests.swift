@@ -7,27 +7,11 @@ final class VoicePromptTests: XCTestCase {
         XCTAssertEqual(VoicePrompt.notFoundTurn.clipName, "voice_not_found_turn")
         XCTAssertEqual(VoicePrompt.foundNavigating.clipName, "voice_found_navigating")
         XCTAssertEqual(VoicePrompt.navigating.clipName, "voice_navigating")
-        XCTAssertEqual(VoicePrompt.okay.clipName, "voice_okay")
-    }
-
-    func testMinutesRoundToNearestBucket() {
-        XCTAssertEqual(VoicePrompt.minuteBucket(for: 0), 0)
-        XCTAssertEqual(VoicePrompt.minuteBucket(for: 4), 3)
-        XCTAssertEqual(VoicePrompt.minuteBucket(for: 7), 5)
-        XCTAssertEqual(VoicePrompt.minuteBucket(for: 8), 10)
-        XCTAssertEqual(VoicePrompt.minuteBucket(for: 38), 45)
-        XCTAssertEqual(VoicePrompt.minuteBucket(for: 300), 60)
-        XCTAssertEqual(VoicePrompt.minuteBucket(for: -2), 0)
-    }
-
-    func testPreviouslyFoundUsesBucketInFileName() {
-        let prompt = VoicePrompt.previouslyFound(minutesAgo: 12)
-        XCTAssertEqual(prompt.clipName, "voice_previously_found_10m")
     }
 
     func testAllClipNamesAreUnique() {
         let names = VoicePrompt.allClipNames
-        XCTAssertEqual(names.count, 6 + VoicePrompt.minuteBuckets.count)
+        XCTAssertEqual(names.count, 4)
         XCTAssertEqual(Set(names).count, names.count)
     }
 

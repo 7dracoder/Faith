@@ -166,32 +166,8 @@ enum VoicePrompt: Equatable {
     case notFoundTurn
     /// "Item found, navigating." The vision model found it; guidance starts.
     case foundNavigating
-    /// "Item was previously found <N> minutes ago. Want to navigate?"
-    /// The vision model didn't see it, but Finder remembers where it was.
-    case previouslyFound(minutesAgo: Int)
-    /// "Navigating." The user said yes to the remembered spot.
+    /// "Navigating." Guidance to a remembered spot starts.
     case navigating
-    /// "Okay." The user said no.
-    case okay
-    /// Faith: "Send this view to find it? Hold the screen to send, or double tap to cancel."
-    case sendView
-
-    /// Minute values that have their own "previously found" clip.
-    /// 0 = "less than a minute ago", 60 = "about an hour ago" (anything longer too).
-    static let minuteBuckets = [0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
-
-    /// The closest bucket to `minutes` (ties go to the smaller one).
-    static func minuteBucket(for minutes: Int) -> Int {
-        var best = minuteBuckets[0]
-        for bucket in minuteBuckets {
-            let bestGap = abs(best - minutes)
-            let gap = abs(bucket - minutes)
-            if gap < bestGap {
-                best = bucket
-            }
-        }
-        return best
-    }
 
     /// Bundle file name without extension.
     var clipName: String {
@@ -202,32 +178,19 @@ enum VoicePrompt: Equatable {
             return "voice_not_found_turn"
         case .foundNavigating:
             return "voice_found_navigating"
-        case .previouslyFound(let minutesAgo):
-            let bucket = VoicePrompt.minuteBucket(for: minutesAgo)
-            return "voice_previously_found_\(bucket)m"
         case .navigating:
             return "voice_navigating"
-        case .okay:
-            return "voice_okay"
-        case .sendView:
-            return "voice_send_view"
         }
     }
 
     /// Every file the voice module must ship.
     static var allClipNames: [String] {
-        var names = [
+        return [
             VoicePrompt.searching.clipName,
             VoicePrompt.notFoundTurn.clipName,
             VoicePrompt.foundNavigating.clipName,
-            VoicePrompt.navigating.clipName,
-            VoicePrompt.okay.clipName,
-            VoicePrompt.sendView.clipName
+            VoicePrompt.navigating.clipName
         ]
-        for bucket in minuteBuckets {
-            names.append(VoicePrompt.previouslyFound(minutesAgo: bucket).clipName)
-        }
-        return names
     }
 }
 
@@ -307,13 +270,6 @@ enum FinderError: Error, Equatable {
     case audioEngineFailed(String)
     case speechNotAuthorized
     case speechFailed(String)
-}
-
-/// Faith: a frame captured for a request, kept on the phone until the user approves it.
-struct PendingFrame {
-    let utterance: String
-    let snapshot: Snapshot
-    let expiresAt: Date
 }
 
 enum FinderState: Equatable {

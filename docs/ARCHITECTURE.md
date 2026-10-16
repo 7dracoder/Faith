@@ -6,7 +6,7 @@ Faith is a native iPhone app with one full-screen hold-to-talk surface. On-devic
 flowchart LR
     U[Hold to talk, on-device speech] --> R{Route}
     R -- object --> F[Finder: ARKit, depth, spatial audio, head tracking]
-    F -. one consented frame .-> B[FastAPI backend on Daytona]
+    F -. frame when asked, memory snapshots .-> B[FastAPI backend on Daytona]
     B -. bounding box .-> V[Baseten Kimi-K3 vision]
     R -- tickets --> A[ElevenLabs agent]
     A -. client tools run in the app .-> B
@@ -19,7 +19,7 @@ flowchart LR
 
 ## The finder
 
-Each request captures a snapshot (upright JPEG, camera pose, intrinsics, depth). Faith then asks “Send this view to find it?”: a hold or a spoken yes sends that one frame, a double tap or no drops it, and the offer expires after 30 seconds. The backend returns only a 2D box; the phone turns it into a world point using the snapshot’s own pose and depth or a detected surface. There is no fixed-depth fallback. Guidance is binaural audio steered by AirPods head tracking, plus haptics and recorded voice lines. Positions and last-seen memories stay on the phone and are cleared when tracking resets, the app leaves the finder, or it is backgrounded. See [object finding](OBJECTS.md).
+Each request captures a snapshot (upright JPEG, camera pose, intrinsics, depth). Faith first checks object memory; if the object isn’t remembered, the frame is sent as soon as the user lets go (asking is the consent). The backend returns only a 2D box; the phone turns it into a world point using the snapshot’s own pose and depth or a detected surface. There is no fixed-depth fallback. Guidance is binaural audio steered by AirPods head tracking, plus haptics and recorded voice lines. While the finder is open, memory snapshots every few seconds (only when the view changed) stay on the phone; the backend lists their objects without storing them, and SurrealDB keeps only names, places, times, and AR positions. Positions guide only within the AR session that measured them. See [object finding](OBJECTS.md).
 
 ## The booking agent
 
@@ -58,7 +58,9 @@ Sessions are anonymous bearer tokens kept in the iPhone Keychain. They are demo 
 | POST | `/api/real-search` | Real times and prices, read-only, unverified |
 | POST | `/api/access-info` | Provider accessibility summary, unverified |
 | GET/PUT/DELETE | `/api/preferences` | Preference memory |
-| POST | `/api/objects/locate` | One consented frame, strict 2D box |
+| POST | `/api/objects/locate` | The frame sent when the user asks, strict 2D box |
+| POST | `/api/objects/scan` | One memory snapshot: objects, boxes, places; nothing stored |
+| GET/POST/DELETE | `/api/objects/memory` | Object memory (names, places, times, positions), `?name=` to recall |
 | GET | `/health` | Liveness |
 
 ## Real ticketing

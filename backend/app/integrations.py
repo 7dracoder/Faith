@@ -1,8 +1,9 @@
 """Opt-in services. Never pass checkout authority or credentials to a model."""
 import hashlib
 import os
+import re
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -132,6 +133,64 @@ async def forget_preferences(owner):
 
 
 PREFERENCE_FIELDS = ["home_city", "step_free", "audio_description", "companion", "passengers"]
+
+
+def object_memory_record(owner):
+    from surrealdb import RecordID
+    # Same hashed key as preferences, in its own table; never the token, a picture, or the user's words.
+    return RecordID("object_memory", hashlib.sha256(owner.encode()).hexdigest())
+
+
+MEMORY_LIMIT = 100
+MEMORY_DAYS = 7
+FILLER_WORDS = {"a", "an", "the", "my", "me", "i", "is", "are", "was", "it", "its", "of", "to", "for", "where", "wheres",
+                "what", "find", "look", "can", "you", "please", "did", "put", "left", "leave", "s", "this", "that"}
+
+
+def object_words(text):
+    words = re.sub(r"['’]", "", text.lower())
+    words = [w for w in re.split(r"[^a-z0-9]+", words) if w and w not in FILLER_WORDS]
+    return {w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w for w in words}
+
+
+def memory_key(label):
+    return " ".join(sorted(object_words(label))) or label.lower()
+
+
+async def load_object_memory(owner):
+    async with surreal() as db:
+        found = await db.select(object_memory_record(owner))
+    if isinstance(found, list):
+        found = found[0] if found else None
+    # Before the first write the SDK answers with a "table does not exist" string.
+    items = (found.get("items") or {}) if isinstance(found, dict) else {}
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=MEMORY_DAYS)).isoformat()
+    return sorted((item for item in items.values() if item.get("seen_at", "") >= cutoff),
+                  key=lambda item: item["seen_at"], reverse=True)
+
+
+async def remember_objects(owner, entries):
+    """Newest sighting per object wins; the oldest objects fall off past the limit."""
+    items = {memory_key(item["label"]): item for item in await load_object_memory(owner)}
+    for entry in entries:
+        key = memory_key(entry["label"])
+        if key not in items or items[key]["seen_at"] <= entry["seen_at"]:
+            items[key] = entry
+    newest = sorted(items.items(), key=lambda pair: pair[1]["seen_at"], reverse=True)[:MEMORY_LIMIT]
+    async with surreal() as db:
+        await db.upsert(object_memory_record(owner), {"items": dict(newest),
+                                                      "updated_at": datetime.now(timezone.utc).isoformat()})
+    return len(newest)
+
+
+async def forget_object_memory(owner):
+    async with surreal() as db:
+        await db.delete(object_memory_record(owner))
+
+
+def matching_objects(items, name):
+    wanted = object_words(name)
+    return [item for item in items if wanted & object_words(item["label"])] if wanted else []
 
 
 def describe_preferences(preferences):

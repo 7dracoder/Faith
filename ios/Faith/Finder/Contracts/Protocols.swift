@@ -96,6 +96,30 @@ protocol VoicePromptPlaying: AnyObject {
     func stop()
 }
 
+/// Speaks a sentence that has no recorded clip ("I last saw your keys on the counter, 3 minutes ago").
+@MainActor
+protocol SentenceSpeaking: AnyObject {
+    /// Returns when the sentence has been spoken.
+    func speak(_ text: String) async
+}
+
+/// Object memory on the Faith backend: a scan lists what a picture shows (the picture is not
+/// stored); memory keeps only labels, places, times, and AR positions.
+@MainActor
+protocol ObjectMemoryBackend: AnyObject {
+    func scan(jpeg: Data) async throws -> [ScannedObject]
+    func save(_ objects: [SeenObject]) async throws
+    func recall(name: String) async throws -> [SeenObject]
+    func forget() async throws
+}
+
+struct ScannedObject: Equatable {
+    let label: String
+    let place: String
+    let box: NormalizedRect
+    let confidence: Double
+}
+
 protocol TelemetryReporting: AnyObject {
     var pendingCount: Int { get }
     func report(_ result: RoundResult) async

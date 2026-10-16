@@ -5,9 +5,9 @@ import secrets
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -17,11 +17,12 @@ from app.assistant import bedrock_intent, local_intent
 from app.catalog import search_catalog
 from app.config import Settings
 from app.integrations import (ACCESS_SOURCES, REAL_SOURCES, access_question, configure_tracing, conversation_token, create_speech,
-                              describe_preferences, forget_preferences, load_preferences, mirror_booking, operation, real_times,
-                              research_access, save_preferences)
-from app.models import (AccessInfoRequest, ConfirmRequest, IntentRequest, ObjectLocateRequest, QuoteRequest, RealSearchRequest,
-                        ResearchRequest, SavedPreferences, SearchRequest, SpeechRequest)
-from app.object_vision import locate_object, vision_configured
+                              describe_preferences, forget_object_memory, forget_preferences, load_object_memory, load_preferences,
+                              matching_objects, mirror_booking, operation, real_times, remember_objects, research_access,
+                              save_preferences)
+from app.models import (AccessInfoRequest, ConfirmRequest, IntentRequest, MemoryUpdate, ObjectLocateRequest, ObjectScanRequest,
+                        QuoteRequest, RealSearchRequest, ResearchRequest, SavedPreferences, SearchRequest, SpeechRequest)
+from app.object_vision import baseten_ready, locate_object, scan_objects, vision_configured
 from app.store import BookingError, BookingStore
 
 logger = logging.getLogger("faith")
@@ -35,6 +36,8 @@ def create_app(settings: Settings | None = None):
     speech_slots = asyncio.Semaphore(2)
     vision_budget = deque()
     vision_slots = asyncio.Semaphore(2)
+    scan_budget = deque()
+    scan_slots = asyncio.Semaphore(2)
     access_cache = {}
     access_budget = deque()
     access_slots = asyncio.Semaphore(2)
@@ -123,7 +126,8 @@ def create_app(settings: Settings | None = None):
                 "access_info_configured": bool(os.getenv("ANCHOR_API_KEY")),
                 "agent_configured": bool(os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_AGENT_ID")),
                 "preferences_configured": bool(os.getenv("SURREAL_URL")),
-                "real_times_configured": bool(os.getenv("ANCHOR_API_KEY"))}
+                "real_times_configured": bool(os.getenv("ANCHOR_API_KEY")),
+                "object_memory_configured": baseten_ready(settings) and bool(os.getenv("SURREAL_URL"))}
 
     @app.post("/api/search")
     def search(body: SearchRequest, owner: str = Depends(session)):
@@ -310,6 +314,64 @@ def create_app(settings: Settings | None = None):
         except Exception:
             # Do not log requests, image bytes, provider responses, or exception text.
             raise HTTPException(502, "Object recognition is unavailable. No location was inferred. Try session memory or manual surface marking.") from None
+
+    @app.post("/api/objects/scan")
+    async def object_scan(body: ObjectScanRequest, owner: str = Depends(session)):
+        if not baseten_ready(settings):
+            raise HTTPException(503, "Object memory needs a configured Baseten vision model. Live finding still works when configured.")
+        now = time.monotonic()
+        while scan_budget and scan_budget[0][0] < now - 3600:
+            scan_budget.popleft()
+        # Automatic scans: bound cost per session and overall, separate from spoken requests.
+        if len(scan_budget) >= 600 or sum(1 for stamp, token in scan_budget if token == owner and stamp > now - 60) >= 20:
+            raise HTTPException(429, "Object memory is pausing for a moment to limit cost.")
+        scan_budget.append((now, owner))
+        try:
+            with operation("faith.object_scan", provider="baseten") as span:
+                async with scan_slots:
+                    result = await run_in_threadpool(scan_objects, body, settings)
+                span.set_attribute("objects.count", len(result.objects))
+            return result.model_dump(mode="json")
+        except Exception:
+            # The image is never stored, logged, or echoed.
+            raise HTTPException(502, "Object memory scan is unavailable. Nothing was stored.") from None
+
+    def memory_ready():
+        if not os.getenv("SURREAL_URL"):
+            raise HTTPException(503, "Object memory storage is not configured; the phone keeps its own copy.")
+
+    @app.post("/api/objects/memory")
+    async def remember_seen(body: MemoryUpdate, owner: str = Depends(session)):
+        memory_ready()
+        entries = [{**entry.model_dump(mode="json"), "seen_at": entry.seen_at.astimezone(timezone.utc).isoformat()}
+                   for entry in body.entries]
+        try:
+            with operation("faith.object_memory", action="save") as span:
+                count = await asyncio.wait_for(remember_objects(owner, entries), timeout=5)
+                span.set_attribute("entries.count", len(entries))
+        except Exception:
+            raise HTTPException(502, "Couldn't store object memory right now. The phone keeps its own copy.") from None
+        return {"stored": len(entries), "remembered": count}
+
+    @app.get("/api/objects/memory")
+    async def recall_seen(name: str = Query(default="", max_length=120), owner: str = Depends(session)):
+        memory_ready()
+        try:
+            with operation("faith.object_memory", action="read"):
+                items = await asyncio.wait_for(load_object_memory(owner), timeout=5)
+        except Exception:
+            raise HTTPException(502, "Object memory is unavailable right now.") from None
+        return {"objects": matching_objects(items, name) if name else items}
+
+    @app.delete("/api/objects/memory")
+    async def forget_seen(owner: str = Depends(session)):
+        memory_ready()
+        try:
+            with operation("faith.object_memory", action="forget"):
+                await asyncio.wait_for(forget_object_memory(owner), timeout=5)
+        except Exception:
+            raise HTTPException(502, "Couldn't forget object memory right now. Please try again.") from None
+        return {"forgotten": True}
 
     @app.post("/api/speech")
     async def speech(body: SpeechRequest, owner: str = Depends(session)):

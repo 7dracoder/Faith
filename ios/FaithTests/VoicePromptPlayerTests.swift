@@ -72,10 +72,10 @@ final class VoicePromptPlayerTests: XCTestCase {
     func testPlayDucksTheCueAndReturnsWhenTheClipEnds() async throws {
         let ducking = DuckingSpy()
         let clip = try makeClip(seconds: 0.3)
-        let player = VoicePromptPlayer(ducking: ducking, clipURLs: [VoicePrompt.okay.clipName: clip])
+        let player = VoicePromptPlayer(ducking: ducking, clipURLs: [VoicePrompt.navigating.clipName: clip])
 
         let started = Date()
-        await player.play(.okay)
+        await player.play(.navigating)
         let elapsed = Date().timeIntervalSince(started)
 
         XCTAssertEqual(ducking.calls, [true, false])
@@ -100,7 +100,7 @@ final class VoicePromptPlayerTests: XCTestCase {
         try Data("not audio".utf8).write(to: broken)
         temporaryFiles.append(broken)
 
-        let player = VoicePromptPlayer(ducking: nil, clipURLs: [VoicePrompt.okay.clipName: broken])
+        let player = VoicePromptPlayer(ducking: nil, clipURLs: [VoicePrompt.navigating.clipName: broken])
         XCTAssertTrue(player.loadedClipNames.isEmpty)
     }
 
@@ -112,7 +112,7 @@ final class VoicePromptPlayerTests: XCTestCase {
             ducking: ducking,
             clipURLs: [
                 VoicePrompt.notFoundTurn.clipName: longClip,
-                VoicePrompt.okay.clipName: shortClip
+                VoicePrompt.navigating.clipName: shortClip
             ]
         )
 
@@ -121,7 +121,7 @@ final class VoicePromptPlayerTests: XCTestCase {
             await player.play(.notFoundTurn)
         }
         try await Task.sleep(nanoseconds: 150_000_000)
-        await player.play(.okay)
+        await player.play(.navigating)
         await first.value
 
         // Both calls are back long before the 3 s clip could have ended.

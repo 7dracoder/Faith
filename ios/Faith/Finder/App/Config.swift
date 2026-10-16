@@ -3,9 +3,7 @@ import Foundation
 enum Config {
     /// Whole budget for one backend vision request. The coordinator adds 1 s on top.
     static let locatorTimeoutSeconds: TimeInterval = 25
-    /// How long an approved-or-not camera frame waits for "send" before it is dropped.
-    static let frameConsentSeconds: TimeInterval = 30
-    /// Holding this long (with nothing said) sends the frame or books the quote.
+    /// Holding this long on the booking screen books the quote.
     static let holdToAcceptSeconds: TimeInterval = 1.5
     /// Where the ears are relative to the phone. No stand: the phone is held against the
     /// chest, so the ears are ~35 cm straight above it. (With a stand in front of the user,
@@ -40,9 +38,6 @@ enum Config {
     /// Say "The camera is still starting…" after this long stuck in setup, then every N seconds.
     static let cameraStartingAnnounceAfterSeconds: TimeInterval = 3
     static let cameraStartingRepeatSeconds: TimeInterval = 15
-    /// How long "want to navigate?" waits for a yes / no.
-    static let memoryOfferSeconds: TimeInterval = 20
-    static let maximumRememberedSightings = 50
     static let knownObjects = [
         "mug", "cup", "bottle", "keys", "phone", "wallet",
         "glasses", "remote", "pen", "headphones", "apple"

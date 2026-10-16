@@ -7,8 +7,6 @@ struct UserModeView: View {
     @EnvironmentObject private var coordinator: FinderCoordinator
 
     @State private var isHoldingToAsk = false
-    @State private var pressStartedAt = Date.distantPast
-    @State private var lastShortTapAt = Date.distantPast
 
     var body: some View {
         holdAnywhereSurface
@@ -44,7 +42,7 @@ struct UserModeView: View {
                     .foregroundStyle(isHoldingToAsk ? FinderTheme.forest : FinderTheme.lime)
                     .symbolEffect(.pulse, isActive: isHoldingToAsk)
 
-                Text(isHoldingToAsk ? "Listening…" : (coordinator.pendingFrame != nil ? "Send this view?" : "Hold anywhere to ask"))
+                Text(isHoldingToAsk ? "Listening…" : "Hold anywhere to ask")
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
                     .foregroundStyle(foregroundColor)
@@ -57,10 +55,15 @@ struct UserModeView: View {
 
                 Spacer()
 
-                Text(isHoldingToAsk ? "Release when you finish speaking" : (coordinator.pendingFrame != nil ? "Hold to send · Double tap to cancel" : "Press, speak, then release"))
+                Text(isHoldingToAsk ? "Release when you finish speaking" : "Press, speak, then release")
                     .font(.headline)
                     .foregroundStyle(foregroundColor)
-                    .padding(.bottom, 48)
+
+                Label(coordinator.isRemembering ? "Remembering objects · say “stop remembering”" : "Not remembering objects · say “start remembering”",
+                      systemImage: coordinator.isRemembering ? "brain.head.profile" : "pause.circle")
+                    .font(.footnote)
+                    .foregroundStyle(foregroundColor.opacity(0.8))
+                    .padding(.bottom, 40)
             }
         }
         .contentShape(Rectangle())
@@ -84,9 +87,11 @@ struct UserModeView: View {
             markFoundWithMagicTap()
         }
         .accessibilityActions {
-            if coordinator.pendingFrame != nil {
-                Button("Send this view") { coordinator.approvePendingFrame() }
-                Button("Don’t send") { coordinator.declinePendingFrame() }
+            Button(coordinator.isRemembering ? "Stop remembering objects" : "Start remembering objects") {
+                coordinator.setRemembering(!coordinator.isRemembering)
+            }
+            Button("Forget what you’ve seen") {
+                Task { await coordinator.forgetEverythingSeen() }
             }
         }
     }
@@ -102,21 +107,18 @@ struct UserModeView: View {
 
     private var statusMessage: String {
         if isHoldingToAsk {
-            return coordinator.pendingFrame != nil ? "Say yes to send it, or no to cancel." : "Say the name of the object you want to find, or ask for a ticket."
-        }
-        if let frame = coordinator.pendingFrame {
-            return "Send this view to find \(frame.utterance)? Only this one picture is sent, and only if you agree."
+            return "Say the name of the object you want to find, or ask for a ticket."
         }
 
         switch coordinator.state {
         case .setup:
             return "Getting the camera ready."
         case .ready:
-            return "Ready."
+            return coordinator.memoryAnswer ?? "Ready."
         case .listening:
             return "Listening."
         case .locating(let utterance):
-            return "Finding \(utterance)."
+            return coordinator.memoryAnswer ?? "Finding \(utterance)."
         case .guiding(let target, _):
             return "Follow the sound to \(target.label). Hold and say “found” when you have it."
         case .found(let result):
@@ -131,14 +133,7 @@ struct UserModeView: View {
     }
 
     private var holdAccessibilityHint: String {
-        if coordinator.pendingFrame != nil {
-            return "Double-tap and hold to send this view, or use the actions to send or cancel."
-        }
-        if coordinator.memoryOffer != nil {
-            return "Say yes to go to where it was last seen, or say no to continue searching."
-        }
-
-        return "Say an object, or ask to book a ticket. Say calibrate to recenter. When you reach an object, hold and say found."
+        return "Say an object, or ask to book a ticket. Releasing sends the camera view to find it. Say calibrate to recenter. When you reach an object, hold and say found."
     }
 
     private var canHoldToAsk: Bool {
@@ -156,7 +151,6 @@ struct UserModeView: View {
         }
 
         isHoldingToAsk = true
-        pressStartedAt = Date()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         coordinator.beginVoiceRequest()
     }
@@ -168,16 +162,6 @@ struct UserModeView: View {
 
         isHoldingToAsk = false
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        let now = Date()
-        if coordinator.pendingFrame != nil, now.timeIntervalSince(pressStartedAt) < 0.35 {
-            // Two quick taps: don't send.
-            if now.timeIntervalSince(lastShortTapAt) < 0.5 {
-                lastShortTapAt = .distantPast
-                coordinator.declinePendingFrame()
-            } else {
-                lastShortTapAt = now
-            }
-        }
         coordinator.endVoiceRequest()
     }
 

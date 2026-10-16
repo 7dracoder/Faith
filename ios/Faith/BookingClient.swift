@@ -39,9 +39,12 @@ final class BookingClient {
         Self.saveToken(session.sessionToken)
     }
 
-    func request<T: Decodable, B: Encodable>(_ path: String, method: String = "GET", body: B?, timeout: TimeInterval = 30) async throws -> T {
+    func request<T: Decodable, B: Encodable>(_ path: String, method: String = "GET", body: B?, timeout: TimeInterval = 30,
+                                             query: [URLQueryItem] = []) async throws -> T {
         guard baseURL.scheme == "http" || baseURL.scheme == "https" else { throw FaithAPIError.invalidURL }
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/" + path))
+        var url = baseURL.appendingPathComponent("api/" + path)
+        if !query.isEmpty { url.append(queryItems: query) }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -68,6 +71,34 @@ final class BookingClient {
         try await start()
         struct FrameRequest: Encodable { let objectQuery: String; let jpegBase64: String; let consent: Bool }
         return try await request("objects/locate", method: "POST", body: FrameRequest(objectQuery: query, jpegBase64: jpeg.base64EncodedString(), consent: true))
+    }
+    struct ScanReply: Decodable {
+        struct Item: Decodable { let label: String; let place: String?; let box: ObjectLocationAnswer.Box; let confidence: Double }
+        let objects: [Item]
+    }
+    func scanObjects(jpeg: Data) async throws -> ScanReply {
+        try await start()
+        struct Scan: Encodable { let jpegBase64: String }
+        return try await request("objects/scan", method: "POST", body: Scan(jpegBase64: jpeg.base64EncodedString()), timeout: 25)
+    }
+    struct MemoryItem: Codable { let label: String; let place: String; let seenAt: String; let position: [Float]?; let arSession: String? }
+    func saveObjectMemory(_ entries: [MemoryItem]) async throws {
+        try await start()
+        struct Update: Encodable { let entries: [MemoryItem] }
+        struct Stored: Decodable { let stored: Int }
+        let _: Stored = try await request("objects/memory", method: "POST", body: Update(entries: entries), timeout: 10)
+    }
+    func objectMemory(name: String) async throws -> [MemoryItem] {
+        try await start()
+        struct Recalled: Decodable { let objects: [MemoryItem] }
+        let reply: Recalled = try await request("objects/memory", body: Optional<String>.none, timeout: 4,
+                                                query: [URLQueryItem(name: "name", value: String(name.prefix(120)))])
+        return reply.objects
+    }
+    func forgetObjectMemory() async throws {
+        try await start()
+        struct Forgotten: Decodable { let forgotten: Bool }
+        let _: Forgotten = try await request("objects/memory", method: "DELETE", body: Optional<String>.none, timeout: 10)
     }
     struct AgentSession: Decodable { let conversationToken: String; let today: String; let savedPreferences: String? }
     func agentSession() async throws -> AgentSession {

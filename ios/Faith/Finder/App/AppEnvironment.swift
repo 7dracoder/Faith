@@ -85,6 +85,11 @@ final class AppEnvironment {
     let telemetry: TelemetryReporting
     /// Pre-recorded voice lines.
     let voicePrompts: VoicePromptPlaying
+    /// Sentences with no recorded clip.
+    let speech: SentenceSpeaking
+    let memoryBackend: ObjectMemoryBackend
+    /// Memory pictures and remembered objects on the phone.
+    let seenObjects: SeenObjectStore
 
     init(
         perception: PerceptionService,
@@ -93,7 +98,10 @@ final class AppEnvironment {
         audio: SpatialAudioRendering,
         voice: VoiceCommandListening,
         telemetry: TelemetryReporting,
-        voicePrompts: VoicePromptPlaying = MockVoicePromptPlayer()
+        voicePrompts: VoicePromptPlaying = MockVoicePromptPlayer(),
+        speech: SentenceSpeaking = MockSentenceSpeaker(),
+        memoryBackend: ObjectMemoryBackend = MockObjectMemoryBackend(),
+        seenObjects: SeenObjectStore? = nil
     ) {
         self.perception = perception
         self.locator = locator
@@ -102,6 +110,9 @@ final class AppEnvironment {
         self.voice = voice
         self.telemetry = telemetry
         self.voicePrompts = voicePrompts
+        self.speech = speech
+        self.memoryBackend = memoryBackend
+        self.seenObjects = seenObjects ?? SeenObjectStore(directory: nil, defaults: UserDefaults(suiteName: "faith.tests.\(UUID().uuidString)") ?? .standard)
     }
 
     /// Picks real or mock per flag. Until a real implementation exists, its flag is forced to mock.
@@ -127,7 +138,10 @@ final class AppEnvironment {
             audio: audio,
             voice: voice,
             telemetry: telemetry,
-            voicePrompts: voicePrompts
+            voicePrompts: voicePrompts,
+            speech: flags.mockAudio ? MockSentenceSpeaker() : SentenceSpeaker(),
+            memoryBackend: flags.mockLocator ? MockObjectMemoryBackend() : FaithMemoryBackend(client: client),
+            seenObjects: SeenObjectStore.standard()
         )
     }
 

@@ -30,6 +30,7 @@ final class FaithController: ObservableObject {
     let agent: BookingAgent
     private var pendingFind: String?
     private var backgrounded = false
+    private let speaker = SentenceSpeaker()
 
     init() {
         let client = BookingClient()
@@ -44,19 +45,20 @@ final class FaithController: ObservableObject {
         }
     }
 
+    /// The camera and memory capture stop while the booking screen is open.
     private func startBooking(_ request: String) {
         coordinator.onDisappear()
-        coordinator.forgetRememberedObjects()
-        agent.start(with: request)
+        let speaker = speaker
+        agent.start(with: request) { await speaker.speak("Booking assistant") }
     }
 
-    /// Camera frames, object positions, and the conversation never outlive the foreground.
+    /// The camera, memory capture, and the conversation never run in the background.
+    /// Remembered objects stay; their positions are only reused within the same AR session.
     func enterBackground() {
         backgrounded = true
         pendingFind = nil
         if agent.isOn { agent.end() }
         coordinator.onDisappear()
-        coordinator.forgetRememberedObjects()
     }
 
     func becomeActive() {
@@ -100,32 +102,48 @@ struct HomeView: View {
     }
 }
 
+/// The booking screen: opaque mint with a "Booking" header, so it never looks like the finder.
 struct AgentView: View {
     @EnvironmentObject private var agent: BookingAgent
 
     var body: some View {
         ZStack {
-            (agent.quote != nil ? FinderTheme.mint : FinderTheme.forest).ignoresSafeArea()
+            FinderTheme.mint.ignoresSafeArea()
             VStack(spacing: FinderTheme.largeSpacing) {
-                Spacer()
-                Image(systemName: symbol)
-                    .font(.system(size: 92, weight: .bold))
-                    .foregroundStyle(agent.quote != nil ? FinderTheme.forest : FinderTheme.lime)
-                    .symbolEffect(.pulse, isActive: agent.speaking)
-                Text(title).font(.largeTitle.bold()).multilineTextAlignment(.center)
-                Text(agent.lastLine).font(.title3).multilineTextAlignment(.center).lineLimit(8)
-                    .padding(.horizontal, FinderTheme.largeSpacing)
-                if let quote = agent.quote {
-                    Text("\(quote.offer.title), \(ticketMoney(quote.totalMinor)) total")
-                        .font(.title2.bold()).multilineTextAlignment(.center)
+                HStack(spacing: FinderTheme.smallSpacing) {
+                    Image(systemName: "ticket.fill")
+                    Text("Booking")
                 }
+                .font(.largeTitle.weight(.heavy))
+                .padding(.top, 24)
+                Spacer()
+                if let quote = agent.quote {
+                    VStack(spacing: FinderTheme.regularSpacing) {
+                        Image(systemName: "hand.tap.fill").font(.system(size: 64, weight: .bold))
+                        Text("Hold to book · Double tap for another")
+                            .font(.system(size: 34, weight: .heavy)).multilineTextAlignment(.center)
+                        Text("\(quote.offer.title), \(ticketMoney(quote.totalMinor)) total")
+                            .font(.title2.bold()).multilineTextAlignment(.center)
+                    }
+                    .foregroundStyle(FinderTheme.mint)
+                    .padding(FinderTheme.largeSpacing)
+                    .frame(maxWidth: .infinity)
+                    .background(FinderTheme.forest, in: RoundedRectangle(cornerRadius: FinderTheme.cornerRadius))
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: 92, weight: .bold))
+                        .symbolEffect(.pulse, isActive: agent.speaking)
+                    Text(title).font(.largeTitle.bold()).multilineTextAlignment(.center)
+                }
+                Text(agent.lastLine).font(.title3).multilineTextAlignment(.center).lineLimit(8)
+                    .padding(.horizontal, FinderTheme.regularSpacing)
                 Spacer()
                 Text("Demo tickets only. Not valid for travel or entry. No payment is taken.")
-                    .font(.footnote).multilineTextAlignment(.center)
+                    .font(.footnote.weight(.semibold)).multilineTextAlignment(.center)
                 Button("End conversation") { agent.end() }
                     .font(.headline).frame(minHeight: FinderTheme.minimumTouchSize).padding(.bottom, 32)
             }
-            .foregroundStyle(agent.quote != nil ? FinderTheme.forest : .white)
+            .foregroundStyle(FinderTheme.forest)
             .padding(.horizontal)
         }
         .contentShape(Rectangle())
@@ -136,7 +154,7 @@ struct AgentView: View {
             if pressing, agent.quote != nil { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        .accessibilityLabel("Booking. " + title)
         .accessibilityValue(agent.quote.map { "\($0.offer.title), \(ticketMoney($0.totalMinor)) total. Demo ticket." } ?? "")
         .accessibilityHint(agent.quote != nil ? "Double-tap and hold to book. Double-tap for another option." : "Just talk. Two-finger double-tap ends the conversation.")
         .accessibilityAction { agent.rejectQuote() }
@@ -153,13 +171,12 @@ struct AgentView: View {
     private var title: String {
         if agent.quote != nil { return "Hold to book · Double tap for another" }
         switch agent.phase {
-        case .connecting: return "Connecting…"
+        case .connecting: return "Booking assistant, connecting…"
         default: return agent.speaking ? "Faith is speaking" : "Faith is listening"
         }
     }
 
     private var symbol: String {
-        if agent.quote != nil { return "ticket.fill" }
-        return agent.speaking ? "waveform" : "ear"
+        agent.speaking ? "waveform" : "ear"
     }
 }

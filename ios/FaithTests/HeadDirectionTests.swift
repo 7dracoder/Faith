@@ -179,8 +179,7 @@ final class AutoCalibrationTests: XCTestCase {
 
     func testIgnoredRequestDoesNotCalibrate() async throws {
         let (coordinator, headTracker) = try await makeReadyCoordinator()
-        coordinator.submitTypedRequest("mug")
-        coordinator.approvePendingFrame()         // now .locating
+        coordinator.submitTypedRequest("mug")     // now .locating
         headTracker.start()                       // back to .connected
 
         coordinator.beginVoiceRequest()           // ignored while locating
@@ -289,7 +288,7 @@ final class VoiceCalibrateTests: XCTestCase {
         coordinator.endVoiceRequest()
         try await Task.sleep(nanoseconds: 100_000_000)
 
-        XCTAssertEqual(coordinator.pendingFrame?.utterance, "where are my keys")
+        XCTAssertEqual(coordinator.debug.lastUtterance, "where are my keys")
         coordinator.onDisappear()
     }
 

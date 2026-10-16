@@ -28,6 +28,9 @@ final class FaithRoutingTests: XCTestCase {
 
     func testObjectRequestsStayWithTheFinder() {
         XCTAssertFalse(FinderCoordinator.isBookingRequest("where's my mug"))
+        XCTAssertFalse(FinderCoordinator.isBookingRequest("where did I leave my keys"))
+        XCTAssertFalse(FinderCoordinator.isBookingRequest("forget what you've seen"))
+        XCTAssertFalse(FinderCoordinator.isBookingRequest("stop remembering"))
         XCTAssertFalse(FinderCoordinator.isBookingRequest("find my keys"))
         XCTAssertFalse(FinderCoordinator.isBookingRequest("where is my bus pass"))
         XCTAssertFalse(FinderCoordinator.isBookingRequest("headphones"))
@@ -68,9 +71,9 @@ final class FaithRoutingTests: XCTestCase {
     }
 }
 
-/// Per-frame consent: nothing reaches the locator until the user agrees.
+/// Asking is the consent: releasing after an object request sends the frame right away.
 @MainActor
-final class FrameConsentTests: XCTestCase {
+final class AutoSendTests: XCTestCase {
     private final class CountingLocator: ObjectLocator {
         var utterances: [String] = []
         func locate(utterance: String, in snapshot: Snapshot) async throws -> Detection {
@@ -82,12 +85,12 @@ final class FrameConsentTests: XCTestCase {
     private var locator = CountingLocator()
     private var prompts = MockVoicePromptPlayer()
 
-    private func makeReadyCoordinator() async throws -> FinderCoordinator {
+    private func makeReadyCoordinator(voice: VoiceCommandListening = MockVoiceListener()) async throws -> FinderCoordinator {
         locator = CountingLocator()
         prompts = MockVoicePromptPlayer()
         let environment = AppEnvironment(
             perception: MockPerceptionService(), locator: locator, headTracker: MockHeadTracker(),
-            audio: MockSpatialAudio(), voice: MockVoiceListener(), telemetry: MockTelemetry(), voicePrompts: prompts
+            audio: MockSpatialAudio(), voice: voice, telemetry: MockTelemetry(), voicePrompts: prompts
         )
         let coordinator = FinderCoordinator(environment: environment)
         coordinator.onAppear()
@@ -96,43 +99,35 @@ final class FrameConsentTests: XCTestCase {
         return coordinator
     }
 
-    func testRequestAsksBeforeSending() async throws {
+    func testRequestSendsTheFrameWithoutAsking() async throws {
         let coordinator = try await makeReadyCoordinator()
         coordinator.submitTypedRequest("mug")
-        try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(coordinator.pendingFrame?.utterance, "mug")
-        XCTAssertEqual(coordinator.state, .ready)
-        XCTAssertTrue(locator.utterances.isEmpty)
-        XCTAssertEqual(prompts.played.last, .sendView)
-
-        coordinator.approvePendingFrame()
+        XCTAssertEqual(coordinator.state, .locating(utterance: "mug"))
         try await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(locator.utterances, ["mug"])
-        XCTAssertNil(coordinator.pendingFrame)
+        XCTAssertEqual(prompts.played, [.searching, .foundNavigating])
         coordinator.onDisappear()
     }
 
-    func testDecliningSendsNothing() async throws {
-        let coordinator = try await makeReadyCoordinator()
-        coordinator.submitTypedRequest("mug")
-        coordinator.declinePendingFrame()
-        try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertNil(coordinator.pendingFrame)
-        XCTAssertTrue(locator.utterances.isEmpty)
-        XCTAssertEqual(prompts.played.last, .okay)
+    func testReleasingAfterSpeakingSendsTheFrame() async throws {
+        let voice = HeardVoice()
+        voice.heard = "where are my glasses"
+        let coordinator = try await makeReadyCoordinator(voice: voice)
+        coordinator.beginVoiceRequest()
+        coordinator.endVoiceRequest()
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(locator.utterances, ["where are my glasses"])
         coordinator.onDisappear()
     }
 
-    func testCancelAndLeavingDropTheFrame() async throws {
+    func testCancelBeforeTheAnswerSendsNothingFurther() async throws {
         let coordinator = try await makeReadyCoordinator()
         coordinator.submitTypedRequest("mug")
         coordinator.cancel()
-        XCTAssertNil(coordinator.pendingFrame)
-        coordinator.submitTypedRequest("mug")
-        coordinator.onDisappear()
-        XCTAssertNil(coordinator.pendingFrame)
-        coordinator.approvePendingFrame()
+        try await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertTrue(locator.utterances.isEmpty)
+        XCTAssertEqual(coordinator.state, .ready)
+        coordinator.onDisappear()
     }
 
     func testBookingRequestIsHandedOffWithoutACamera() async throws {
@@ -152,7 +147,6 @@ final class FrameConsentTests: XCTestCase {
         coordinator.endVoiceRequest()
         try await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(handed, ["book a bus to Philadelphia"])
-        XCTAssertNil(coordinator.pendingFrame)
         XCTAssertTrue(locator.utterances.isEmpty)
         coordinator.onDisappear()
     }

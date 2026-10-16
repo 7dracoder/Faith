@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate the finder's 15 voice lines with ElevenLabs. Standard library only.
+"""Generate the finder's 4 voice lines with ElevenLabs. Standard library only.
 
     python3 scripts/make_voice_clips.py --dry-run        # list the lines and their cost, send nothing
     python3 scripts/make_voice_clips.py --list-voices    # voices your key can use
     python3 scripts/make_voice_clips.py                  # generate what is missing
-    python3 scripts/make_voice_clips.py --only voice_okay --force   # redo one line
+    python3 scripts/make_voice_clips.py --only voice_navigating --force   # redo one line
 
 Writes ios/Faith/Finder/Voice/Clips/<clipName>.wav: mono, silence trimmed, peak at -1 dBFS.
 Clips that already exist are skipped, so running it again costs nothing.
@@ -43,14 +43,6 @@ VOICE_SETTINGS = {
 }
 SEED = 2026
 
-# Same as VoicePrompt.minuteBuckets. 0 and 60 have their own wording below.
-MINUTE_BUCKETS = [0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
-# Numbers are sent spelled out: the Flash models do not normalize digits reliably.
-NUMBER_WORDS = {
-    1: "one", 2: "two", 3: "three", 5: "five", 10: "ten",
-    15: "fifteen", 20: "twenty", 30: "thirty", 45: "forty-five",
-}
-
 PEAK = 0.891            # -1 dBFS
 SILENCE = 0.02          # below 2% of the loudest sample counts as silence
 LEAD_IN_SECONDS = 0.005
@@ -65,20 +57,7 @@ def voice_lines():
         ("voice_not_found_turn", "Item not found, please turn."),
         ("voice_found_navigating", "Item found, navigating."),
         ("voice_navigating", "Navigating."),
-        ("voice_okay", "Okay."),
-        ("voice_send_view", "Send this view to find it? Hold the screen to send, or double tap to cancel."),
     ]
-    for minutes in MINUTE_BUCKETS:
-        if minutes == 0:
-            when = "less than a minute ago"
-        elif minutes == 1:
-            when = "one minute ago"
-        elif minutes == 60:
-            when = "about an hour ago"
-        else:
-            when = NUMBER_WORDS[minutes] + " minutes ago"
-        text = "Item was previously found " + when + ". Want to navigate?"
-        lines.append(("voice_previously_found_{}m".format(minutes), text))
     return lines
 
 

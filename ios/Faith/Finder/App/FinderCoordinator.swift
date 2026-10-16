@@ -21,14 +21,12 @@ final class FinderCoordinator: ObservableObject {
             environment.audio.setCueSound(cueSound)
         }
     }
-    /// Non-nil while "previously found N minutes ago, want to navigate?" waits for yes / no.
-    @Published private(set) var memoryOffer: MemoryOffer?
-    /// Faith: a captured frame that stays on the phone until the user says yes, holds, or taps Send.
-    @Published private(set) var pendingFrame: PendingFrame?
     /// Faith: ticket requests go to the voice booking agent instead of the camera.
     var onBookingRequest: ((String) -> Void)?
-    private var pendingFrameExpiryTask: Task<Void, Never>?
-    private var pressStartedAt: Date?
+    /// Object memory: snapshots every few seconds while the finder is open (persisted on/off).
+    @Published private(set) var isRemembering: Bool
+    /// The last answer from memory, shown on screen while and after it is spoken.
+    @Published private(set) var memoryAnswer: String?
 
     private let environment: AppEnvironment
 
@@ -80,16 +78,21 @@ final class FinderCoordinator: ObservableObject {
     private var isDetectorActive = false
     private let proximityHaptics = ProximityHaptics()
 
-    /// "Finder remembers": where the vision model last saw each object this session.
-    private var objectMemory = ObjectMemory()
-    private var offeredSighting: ObjectSighting?
-    private var memoryOfferExpiryTask: Task<Void, Never>?
+    /// Positions are only valid in the AR world that measured them; a new id per AR start or reset.
+    private var arSessionID = UUID()
+    private var memoryTask: Task<Void, Never>?
+    private var isScanning = false
+    private var lastScanPose: BodyPose?
+    private var lastScanAt: Date?
+    /// Bumped by "forget", so a scan already in flight can't bring old objects back.
+    private var memoryGeneration = 0
 
     /// Perception restarted the AR session with a fresh world (ARRecovery).
     private var worldResetObserver: NSObjectProtocol?
 
     init(environment: AppEnvironment, statusAnnouncer: StatusAnnouncing? = nil) {
         self.environment = environment
+        self.isRemembering = environment.seenObjects.isRemembering
         self.statusAnnouncer = statusAnnouncer ?? StatusAnnouncer()
         self.liveFeed = LiveFeed.makeFromBundle()
         if liveFeed != nil {
@@ -118,6 +121,8 @@ final class FinderCoordinator: ObservableObject {
             return
         }
         hasAppeared = true
+        arSessionID = UUID()
+        lastScanAt = nil
         logger.info("onAppear")
 
         wireCallbacks()
@@ -143,6 +148,7 @@ final class FinderCoordinator: ObservableObject {
 
         startHealthPolling()
         startSetupWatch()
+        startMemoryCapture()
     }
 
     func onDisappear() {
@@ -152,8 +158,9 @@ final class FinderCoordinator: ObservableObject {
         healthTask = nil
         setupWatchTask?.cancel()
         setupWatchTask = nil
+        memoryTask?.cancel()
+        memoryTask = nil
         stopGuidance()
-        clearPendingFrame()
         environment.perception.pause()
         environment.headTracker.stop()
         environment.audio.stop()
@@ -210,7 +217,6 @@ final class FinderCoordinator: ObservableObject {
                 isListeningMidRound = true
                 midRoundPressTime = Date()
             } else {
-                pressStartedAt = Date()
                 state = .listening
             }
         } catch {
@@ -240,33 +246,14 @@ final class FinderCoordinator: ObservableObject {
             let transcript = await environment.voice.stopListening()
             environment.audio.playEarcon(.listeningEnd)
             let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            let heldFor = Date().timeIntervalSince(pressStartedAt ?? Date())
-            pressStartedAt = nil
-            if pendingFrame != nil {
-                let answer = MemoryAnswer.parse(trimmed)
-                if answer != .other || trimmed.isEmpty {
-                    state = readyOrSetup
-                    if answer == .yes || (trimmed.isEmpty && heldFor >= Config.holdToAcceptSeconds) {
-                        approvePendingFrame()
-                    } else if answer == .no {
-                        declinePendingFrame()
-                    }
-                    return
-                }
-                // Anything else is a new request; startRequest replaces the frame.
-            }
             if trimmed.isEmpty {
                 handleError(.speechFailed("Nothing heard"))
                 return
             }
-            if memoryOffer != nil {
-                let answer = MemoryAnswer.parse(trimmed)
-                if answer != .other {
-                    state = readyOrSetup
-                    answerMemoryOffer(accept: answer == .yes)
-                    return
-                }
-                // Anything else is a new request; startRequest drops the offer.
+            if let command = MemoryCommand.parse(trimmed) {
+                state = readyOrSetup
+                handleMemoryCommand(command)
+                return
             }
             if Self.isBookingRequest(trimmed), let onBookingRequest {
                 state = readyOrSetup
@@ -334,14 +321,6 @@ final class FinderCoordinator: ObservableObject {
             logger.info("Ignoring typed request in state \(String(describing: self.state), privacy: .public)")
             return
         }
-        if memoryOffer != nil {
-            // Typed "yes" / "no" answers "want to navigate?" (testing without voice).
-            let answer = MemoryAnswer.parse(trimmed)
-            if answer != .other {
-                answerMemoryOffer(accept: answer == .yes)
-                return
-            }
-        }
         calibrateHeadForRequest()
         startRequest(utterance: trimmed)
     }
@@ -371,7 +350,6 @@ final class FinderCoordinator: ObservableObject {
             // A tap that starts a round means you're holding or facing the phone, like a request.
             // (Taps during a round only move the target: no recalibration, so the sound doesn't jump.)
             calibrateHeadForRequest()
-            clearMemoryOffer()
             environment.audio.playEarcon(.located)
             beginGuidance(for: target)
         case .listening, .locating:
@@ -381,40 +359,6 @@ final class FinderCoordinator: ObservableObject {
 
     func markFound() {
         finishRound(endedAt: Date())
-    }
-
-    /// Yes / No to "want to navigate?" (operator buttons; spoken yes / no lands here too).
-    func answerMemoryOffer(accept: Bool) {
-        guard let sighting = offeredSighting else {
-            return
-        }
-        clearMemoryOffer()
-        guard canStartRequest || state == .setup else {
-            logger.info("Ignoring memory answer in state \(String(describing: self.state), privacy: .public)")
-            return
-        }
-        guard accept else {
-            logger.info("Memory offer declined")
-            say(.okay)
-            return
-        }
-
-        let target = ObjectMemory.target(from: sighting)
-        logger.info("Navigating to remembered \(sighting.objectLabel, privacy: .public) at \(String(describing: target.worldPosition), privacy: .public)")
-        environment.perception.clearDebugMarkers()
-        environment.perception.showDebugMarker(for: target)
-        debug.placement = target.placement
-        debug.targetPosition = target.worldPosition
-        state = .locating(utterance: sighting.utterance)
-
-        requestTask = Task {
-            // Finish saying "Navigating" before the beeping starts.
-            await sayAndWait(.navigating)
-            if Task.isCancelled {
-                return
-            }
-            beginGuidance(for: target, fromMemory: true)
-        }
     }
 
     /// Ends the round with a successful result. Operator FOUND uses "now"; a spoken
@@ -558,8 +502,6 @@ final class FinderCoordinator: ObservableObject {
         }
         stopMidRoundListening()
         stopGuidance()
-        clearMemoryOffer()
-        clearPendingFrame()
         environment.voicePrompts.stop()
         roundSamples = []   // cancelled rounds upload nothing
         liveFeed?.roundCancelled()
@@ -614,70 +556,41 @@ final class FinderCoordinator: ObservableObject {
 
     private func startRequest(utterance: String) {
         errorResetTask?.cancel()
-        clearMemoryOffer()
+        memoryAnswer = nil
 
-        let snapshot: Snapshot
+        // Taken at release, so a live find sees what the phone pointed at when the user asked.
+        let snapshot: Result<Snapshot, FinderError>
         do {
-            snapshot = try environment.perception.captureSnapshot()
+            snapshot = .success(try environment.perception.captureSnapshot())
         } catch let error as FinderError {
-            handleError(error)
-            return
+            snapshot = .failure(error)
         } catch {
-            handleError(.cameraNotReady)
-            return
+            snapshot = .failure(.cameraNotReady)
         }
 
         debug.lastUtterance = utterance
-        debug.lastSnapshotJPEG = snapshot.uprightJPEG
         debug.lastDetection = nil
-        offerFrame(PendingFrame(utterance: utterance, snapshot: snapshot,
-                                expiresAt: Date().addingTimeInterval(Config.frameConsentSeconds)))
-    }
-
-    // MARK: - Faith: per-frame consent
-
-    /// Nothing leaves the phone yet: ask "Send this view?" first.
-    private func offerFrame(_ frame: PendingFrame) {
-        pendingFrame = frame
-        state = readyOrSetup
-        environment.audio.playEarcon(.located)
-        say(.sendView)
-        pendingFrameExpiryTask?.cancel()
-        pendingFrameExpiryTask = Task {
-            try? await Task.sleep(nanoseconds: UInt64(Config.frameConsentSeconds * 1_000_000_000))
-            if !Task.isCancelled, pendingFrame?.expiresAt == frame.expiresAt {
-                logger.info("Frame consent expired, frame dropped")
-                clearPendingFrame()
+        state = .locating(utterance: utterance)
+        requestTask = Task {
+            if let seen = await recall(utterance) {
+                await answerFromMemory(seen)
+                return
+            }
+            if Task.isCancelled {
+                return
+            }
+            switch snapshot {
+            case .failure(let error):
+                handleError(error)
+            case .success(let snapshot):
+                // Asking is the consent: the picture is sent as soon as the user lets go.
+                debug.lastSnapshotJPEG = snapshot.uprightJPEG
+                logger.info("Locating \"\(utterance, privacy: .public)\"")
+                // Something to hear while the vision model works; the answer's line cuts it off.
+                say(.searching)
+                await runLocateAndPlace(utterance: utterance, snapshot: snapshot)
             }
         }
-    }
-
-    func approvePendingFrame() {
-        guard let frame = pendingFrame, canStartRequest || state == .setup else {
-            return
-        }
-        clearPendingFrame()
-        state = .locating(utterance: frame.utterance)
-        logger.info("Locating \"\(frame.utterance, privacy: .public)\"")
-        // Something to hear while the vision model works; the answer's line cuts it off.
-        say(.searching)
-        requestTask = Task {
-            await runLocateAndPlace(utterance: frame.utterance, snapshot: frame.snapshot)
-        }
-    }
-
-    func declinePendingFrame() {
-        guard pendingFrame != nil else {
-            return
-        }
-        clearPendingFrame()
-        say(.okay)
-    }
-
-    private func clearPendingFrame() {
-        pendingFrameExpiryTask?.cancel()
-        pendingFrameExpiryTask = nil
-        pendingFrame = nil
     }
 
     private func runLocateAndPlace(utterance: String, snapshot: Snapshot) async {
@@ -727,8 +640,9 @@ final class FinderCoordinator: ObservableObject {
         }
     }
 
-    // MARK: - Finder remembers
+    // MARK: - Object memory
 
+    /// A live find is remembered like a memory scan, with its position in this AR session.
     private func rememberSighting(utterance: String, detection: Detection, target: AnchoredTarget) {
         let position = target.worldPosition
         let sighting = ObjectSighting(
@@ -743,8 +657,8 @@ final class FinderCoordinator: ObservableObject {
             placement: target.placement,
             confidence: detection.confidence
         )
-        objectMemory.remember(sighting)
-        logger.info("Remembered \(sighting.objectLabel, privacy: .public) (\(self.objectMemory.sightings.count, privacy: .public) in memory)")
+        storeSeen([SeenObject(label: detection.label, place: "", seenAt: sighting.seenAt,
+                              position: [position.x, position.y, position.z], arSession: arSessionID)])
 
         let telemetry = environment.telemetry
         Task {
@@ -752,63 +666,184 @@ final class FinderCoordinator: ObservableObject {
         }
     }
 
-    /// The vision model couldn't find it (or couldn't answer). If we've seen it before, offer that
-    /// spot; otherwise the usual error, plus "Item not found, please turn" when the vision model
-    /// looked and it wasn't there.
-    private func handleLocateFailure(_ error: FinderError, utterance: String) {
-        if let sighting = objectMemory.bestMatch(for: utterance) {
-            logger.info("Not found (\(String(describing: error), privacy: .public)), but remembered \(sighting.objectLabel, privacy: .public)")
-            offerMemory(sighting)
+    /// Keeps a local copy first, so memory works when the backend is unreachable.
+    private func storeSeen(_ objects: [SeenObject]) {
+        environment.seenObjects.remember(objects)
+        let backend = environment.memoryBackend
+        let logger = logger
+        Task {
+            do {
+                try await backend.save(objects)
+                logger.info("Object memory stored on the backend (\(objects.count, privacy: .public) objects)")
+            } catch {
+                logger.warning("Object memory kept on the phone only: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// The phone's copy first, then the backend's (e.g. after reinstalling).
+    private func recall(_ utterance: String) async -> SeenObject? {
+        let store = environment.seenObjects
+        if let local = store.memory.bestMatch(for: utterance) {
+            return local
+        }
+        let words = ObjectMemory.objectWords(utterance)
+        guard !words.isEmpty else {
+            return nil
+        }
+        let backend = environment.memoryBackend
+        let name = words.sorted().joined(separator: " ")
+        guard let remote = try? await Self.withTimeout(seconds: 4, operation: { try await backend.recall(name: name) }) else {
+            return nil
+        }
+        let found = remote.reduce(into: SeenObjectMemory()) { $0.remember($1) }.bestMatch(for: utterance)
+        if let found {
+            store.remember([found])
+        }
+        return found
+    }
+
+    /// "I last saw your keys on the kitchen counter, 3 minutes ago." Then guidance, if the spot
+    /// was measured in this AR session; otherwise the words are all Faith can honestly give.
+    private func answerFromMemory(_ seen: SeenObject) async {
+        let sentence = SeenObjectMemory.sentence(for: seen)
+        let target = seen.target(in: arSessionID)
+        logger.info("Answering from memory, seen \(ObjectMemory.minutesAgo(seen.seenAt), privacy: .public) min ago, guidable: \(target != nil, privacy: .public)")
+        memoryAnswer = sentence
+        environment.audio.playEarcon(.located)
+        await speak(sentence)
+        if Task.isCancelled {
             return
         }
+        guard let target else {
+            if case .locating = state {
+                state = readyOrSetup
+            }
+            return
+        }
+        environment.perception.clearDebugMarkers()
+        environment.perception.showDebugMarker(for: target)
+        debug.placement = target.placement
+        debug.targetPosition = target.worldPosition
+        await sayAndWait(.navigating)
+        if Task.isCancelled {
+            return
+        }
+        beginGuidance(for: target, fromMemory: true)
+    }
+
+    /// The vision model couldn't find it (or couldn't answer), and memory had nothing:
+    /// the usual error, plus "Item not found, please turn" when it looked and it wasn't there.
+    private func handleLocateFailure(_ error: FinderError, utterance: String) {
         handleError(error)
         if case .objectNotFound = error {
             say(.notFoundTurn)
         }
     }
 
-    private func offerMemory(_ sighting: ObjectSighting) {
-        stopGuidance()
-        environment.audio.playEarcon(.notFound)
+    private func handleMemoryCommand(_ command: MemoryCommand) {
+        environment.audio.playEarcon(.located)
+        switch command {
+        case .stop:
+            setRemembering(false)
+            Task { await speak("Okay, I stopped remembering objects. Say start remembering to turn it back on.") }
+        case .start:
+            setRemembering(true)
+            Task { await speak("Okay, I will remember objects I see.") }
+        case .forget:
+            Task { await forgetEverythingSeen() }
+        }
+    }
 
-        let minutes = ObjectMemory.minutesAgo(sighting.seenAt)
-        let expiresAt = Date().addingTimeInterval(Config.memoryOfferSeconds)
-        offeredSighting = sighting
-        memoryOffer = MemoryOffer(
-            objectLabel: sighting.objectLabel,
-            minutesAgo: minutes,
-            expiresAt: expiresAt
-        )
-        state = readyOrSetup
-        say(.previouslyFound(minutesAgo: minutes))
+    func setRemembering(_ on: Bool) {
+        logger.info("Object memory capture \(on ? "on" : "off", privacy: .public)")
+        isRemembering = on
+        environment.seenObjects.isRemembering = on
+        lastScanAt = nil
+    }
 
-        memoryOfferExpiryTask?.cancel()
-        memoryOfferExpiryTask = Task {
-            try? await Task.sleep(nanoseconds: UInt64(Config.memoryOfferSeconds * 1_000_000_000))
-            if Task.isCancelled {
-                return
-            }
-            if memoryOffer?.expiresAt == expiresAt {
-                logger.info("Memory offer expired")
-                clearMemoryOffer()
+    /// Deletes the pictures and remembered objects on the phone and the backend's copy.
+    func forgetEverythingSeen() async {
+        memoryGeneration += 1
+        memoryAnswer = nil
+        environment.seenObjects.forgetAll()
+        do {
+            try await environment.memoryBackend.forget()
+            await speak("I forgot everything I have seen.")
+        } catch {
+            logger.warning("Backend object memory not cleared: \(error.localizedDescription, privacy: .public)")
+            await speak("I forgot everything on this phone, but couldn't reach the server to clear its copy. Please try again later.")
+        }
+    }
+
+    private func startMemoryCapture() {
+        memoryTask?.cancel()
+        memoryTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                await scanIfDue()
             }
         }
     }
 
-    private func clearMemoryOffer() {
-        memoryOfferExpiryTask?.cancel()
-        memoryOfferExpiryTask = nil
-        offeredSighting = nil
-        if memoryOffer != nil {
-            memoryOffer = nil
+    /// One memory snapshot when the view has changed: saved on the phone, listed by the vision
+    /// model (the backend keeps no picture), placed in this AR world, and remembered.
+    private func scanIfDue() async {
+        guard hasAppeared, isRemembering, !isScanning, status.tracking == .normal else {
+            return
+        }
+        switch state {
+        case .ready, .found:
+            break
+        default:
+            return
+        }
+        guard let pose = environment.perception.currentBodyPose(),
+              MemoryCapturePolicy.isDue(last: lastScanPose, lastAt: lastScanAt, current: pose, now: Date()),
+              let snapshot = try? environment.perception.captureSnapshot() else {
+            return
+        }
+        isScanning = true
+        defer { isScanning = false }
+        lastScanPose = pose
+        lastScanAt = Date()
+        let session = arSessionID
+        let generation = memoryGeneration
+        let store = environment.seenObjects
+        store.savePicture(snapshot.uprightJPEG, cameraTransform: snapshot.cameraTransform, takenAt: snapshot.capturedAt)
+
+        let scanned: [ScannedObject]
+        do {
+            scanned = try await environment.memoryBackend.scan(jpeg: snapshot.uprightJPEG)
+        } catch {
+            logger.info("Memory scan unavailable: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        // Left the finder, stopped remembering, forgot, or the AR world reset while waiting.
+        guard hasAppeared, isRemembering, generation == memoryGeneration, session == arSessionID else {
+            return
+        }
+
+        var seen: [SeenObject] = []
+        for item in scanned {
+            let detection = Detection(label: item.label, box: item.box, confidence: item.confidence)
+            let target = try? await environment.perception.place(detection, from: snapshot)
+            let position = target.map { [$0.worldPosition.x, $0.worldPosition.y, $0.worldPosition.z] }
+            seen.append(SeenObject(label: item.label, place: item.place, seenAt: snapshot.capturedAt,
+                                   position: position, arSession: position == nil ? nil : session))
+        }
+        let placed = seen.filter { $0.position != nil }.count
+        logger.info("Memory scan: \(seen.count, privacy: .public) objects, \(placed, privacy: .public) placed, \(store.pictureCount, privacy: .public) pictures on the phone")
+        if !seen.isEmpty {
+            storeSeen(seen)
         }
     }
 
-    /// Forgets every remembered spot (positions belong to the current AR session).
-    func forgetRememberedObjects() {
-        clearMemoryOffer()
-        objectMemory.clear()
-        logger.info("Object memory cleared")
+    private func speak(_ sentence: String) async {
+        guard Config.voicePromptsEnabled else {
+            return
+        }
+        await environment.speech.speak(sentence)
     }
 
     private func say(_ prompt: VoicePrompt) {
@@ -947,8 +982,7 @@ final class FinderCoordinator: ObservableObject {
     private func handleWorldReset() {
         logger.warning("AR world was reset; positions from before are no longer valid")
         headingReference = nil
-        forgetRememberedObjects()
-        clearPendingFrame()
+        arSessionID = UUID()
         guard isInRound || state == .listening else {
             return
         }
@@ -1080,8 +1114,25 @@ final class FinderCoordinator: ObservableObject {
                 saidCameraStarting = false
                 statusAnnouncer.say(.cameraReady)
             }
+            announceMemoryOnce()
         }
     }
+
+    /// Once per install, after "Camera ready" has had time to play.
+    private func announceMemoryOnce() {
+        let store = environment.seenObjects
+        guard !store.hasAnnounced else {
+            return
+        }
+        store.hasAnnounced = true
+        Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            await speak(Self.memoryAnnouncement)
+        }
+    }
+
+    nonisolated static let memoryAnnouncement =
+        "Faith remembers objects it sees to help you find them later. Say stop remembering to turn this off."
 
     // MARK: - Spoken camera status
 
