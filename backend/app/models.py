@@ -83,3 +83,8 @@ class ConfirmRequest(StrictModel):
 
 class ResearchRequest(StrictModel):
     question: str = Field(min_length=5, max_length=500)
+
+
+class SpeechRequest(StrictModel):
+    text: str = Field(min_length=1, max_length=600)
+    consent: Literal[True]

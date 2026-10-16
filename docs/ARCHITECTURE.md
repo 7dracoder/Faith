@@ -10,6 +10,7 @@ flowchart LR
     B -. intent extraction .-> E[AWS Bedrock]
     B -. metadata spans .-> F[Arize Phoenix]
     B -. minimal read model .-> G[SurrealDB]
+    B -. explicit text consent .-> L[ElevenLabs speech]
     H[Operator-only research] -. configured public page .-> I[Anchor Browser]
     J[Synthetic checks] -. isolated execution .-> K[Daytona]
 ```
@@ -35,6 +36,7 @@ Browser sessions use an HttpOnly, SameSite=Strict cookie. Browser writes need th
 | GET | `/api/bookings` | Retrieve only the active session’s tickets |
 | POST | `/api/bookings/{id}/cancel` | Cancel only the session’s demo ticket |
 | POST | `/api/research` | Operator token required; optional public-page research |
+| POST | `/api/speech` | Session + `consent=true`, at most 600 characters; bounded MP3 response, no local persistence or automatic retries |
 | GET | `/health` | Product and local service health |
 
 FastAPI’s generated schema is available at `/docs`. Use fictional data in development. The local catalog synthesizes travel routes from the requested cities and demo dates; it is not a schedule or availability service. Local events and cinema are in New York.

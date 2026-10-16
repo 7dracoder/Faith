@@ -12,6 +12,8 @@ final class AccessServices: ObservableObject {
     @Published var listening = false
     @Published var transcript = ""
     @Published var speechStatus = ""
+    @Published var cloudAudioReady = false
+    private var cloudPlayer: AVAudioPlayer?
     var optionCount = 0
     var suspended = false
     var hapticsEnabled = false
@@ -36,10 +38,35 @@ final class AccessServices: ObservableObject {
     }
 
     func read(_ message: String) {
+        cloudPlayer?.stop()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate); return }
         let utterance = AVSpeechUtterance(string: message)
         utterance.rate = 0.46
         synthesizer.speak(utterance)
+    }
+
+    func loadCloudAudio(_ data: Data) throws {
+        clearCloudAudio()
+        cloudPlayer = try AVAudioPlayer(data: data)
+        cloudPlayer?.prepareToPlay()
+        cloudAudioReady = true
+    }
+
+    func playCloudAudio() throws {
+        synthesizer.stopSpeaking(at: .immediate)
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try AVAudioSession.sharedInstance().setActive(true)
+        cloudPlayer?.currentTime = 0
+        guard cloudPlayer?.play() == true else { throw FaithAPIError.server("Audio couldn’t play. Your message is still visible.") }
+    }
+
+    func stopAudio() {
+        cloudPlayer?.stop()
+        synthesizer.stopSpeaking(at: .immediate)
+    }
+
+    func clearCloudAudio() {
+        cloudPlayer?.stop(); cloudPlayer = nil; cloudAudioReady = false
     }
 
     func toggleMotion() {
@@ -148,6 +175,7 @@ final class AccessServices: ObservableObject {
     }
 
     func pause() {
+        clearCloudAudio()
         stopMotion()
         if listening { stopDictation() }
         synthesizer.stopSpeaking(at: .immediate)

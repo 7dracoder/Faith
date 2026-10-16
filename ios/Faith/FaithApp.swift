@@ -18,6 +18,12 @@ struct FaithView: View {
     @State private var showAccess = false
     @State private var accepted = false
     @State private var cancellation: DemoTicket?
+    @State private var speechText = ""
+    @State private var speechConsent = false
+    @State private var cloudStatus = ""
+    @State private var cloudTranscript = ""
+    @State private var speechTask: Task<Void, Never>?
+    @State private var speechGenerationID = UUID()
     @Environment(\.scenePhase) private var scenePhase
     @AccessibilityFocusState private var focusedOffer: String?
     @AppStorage("faith.haptics") private var haptics = false
@@ -112,9 +118,13 @@ struct FaithView: View {
         .onChange(of: model.status) { _, message in if !message.isEmpty { access.feedback(message, success: message.contains("saved")) } }
         .onChange(of: access.transcript) { _, text in model.message = text }
         .onChange(of: model.quote?.id) { _, id in access.suspended = id != nil || showAccess || tab != 0; if id != nil && access.listening { access.stopDictation() } }
-        .onChange(of: showAccess) { _, value in access.suspended = value || model.quote != nil || tab != 0 }
+        .onChange(of: showAccess) { _, value in access.suspended = value || model.quote != nil || tab != 0; if !value { clearSpeechAudio() } }
         .onChange(of: tab) { _, value in access.suspended = value != 0 || model.quote != nil || showAccess; if access.listening { access.stopDictation() } }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { access.pause() } }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { clearSpeechAudio(); access.pause() } }
+        .onChange(of: speechText) { _, value in
+            if value.count > 600 { speechText = String(value.prefix(600)) }
+            speechConsent = false; clearSpeechAudio()
+        }
         .onChange(of: haptics) { _, value in access.hapticsEnabled = value }
         .onChange(of: spoken) { _, value in access.spokenUpdates = value }
     }
@@ -235,6 +245,29 @@ struct FaithView: View {
                     Toggle("Speak updates", isOn: $spoken)
                     Button("Read a summary aloud") { access.read(model.status.isEmpty ? "Welcome to Faith. Find flights, trains, buses, cinema, and event demo tickets. All actions also work through text and touch." : model.status) }
                 }
+                Section("Speak or show · ElevenLabs") {
+                    Text("Type a message to show someone, or generate a voice. Matching text is always visible. This is not live captioning or sign-language translation.").font(.footnote)
+                    TextField("Message or ticket summary, maximum 600 characters", text: $speechText, axis: .vertical)
+                        .lineLimit(3...8).accessibilityLabel("Message to speak or show")
+                    Button("Use current page summary") {
+                        let details = tab == 1 ? model.tickets.prefix(3).map { "\($0.quote.offer.title), \($0.quote.offer.date), \(ticketMoney($0.quote.totalMinor)) total, \($0.cancelled ? "cancelled" : "demo saved")." } : model.offers.prefix(3).map { "\($0.title), \($0.date) at \($0.departure), \(ticketMoney($0.total(for: model.resultPassengers))) total including fees." }
+                        speechText = String(("Faith demo. No payment, real reservation, or admission. " + details.joined(separator: " ")).prefix(600))
+                    }
+                    Text("Only this message is sent to ElevenLabs, which may retain it under its service policy. Avoid personal or sensitive details. Device read-aloud uses the system speech service instead.").font(.footnote)
+                    Toggle("I agree to send this message to ElevenLabs to generate speech.", isOn: $speechConsent)
+                    Button(speechTask == nil ? "Generate ElevenLabs audio" : "Generating…") { generateCloudSpeech() }
+                        .disabled(!speechConsent || speechText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || speechTask != nil)
+                    Button("Read message with device voice") { access.read(speechText) }.disabled(speechText.isEmpty)
+                    if access.cloudAudioReady {
+                        Text("Spoken text: " + cloudTranscript)
+                        Button("Play generated audio") {
+                            do { try access.playCloudAudio(); cloudStatus = "Playback started. The same text is shown above." } catch { cloudStatus = error.localizedDescription }
+                        }
+                    }
+                    Button("Stop audio") { clearSpeechAudio() }
+                    Button("Clear message") { clearSpeechAudio(); speechText = ""; speechConsent = false; cloudStatus = "Message cleared." }
+                    if !cloudStatus.isEmpty { Text(cloudStatus).font(.footnote).accessibilityAddTraits(.updatesFrequently) }
+                }
                 Section("Tilt to explore") {
                     Text("Hold comfortably, then enable motion. Tilt left or right to focus the previous or next result. Return to center between moves. Motion never selects or confirms tickets.")
                     Button(access.motionEnabled ? "Disable motion controls" : "Enable motion controls") { access.toggleMotion() }
@@ -252,5 +285,31 @@ struct FaithView: View {
     private func errorView(_ text: String) -> some View {
         Label(text, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(.red)
             .accessibilityLabel("Error. \(text)")
+    }
+
+    private func clearSpeechAudio() {
+        speechGenerationID = UUID(); speechTask?.cancel(); speechTask = nil
+        access.stopAudio(); access.clearCloudAudio(); cloudTranscript = ""
+        cloudStatus = "Audio stopped. Your message remains available as text."
+    }
+
+    private func generateCloudSpeech() {
+        guard speechConsent, speechTask == nil else { return }
+        let text = speechText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= 600 else { return }
+        clearSpeechAudio()
+        let id = speechGenerationID
+        cloudStatus = "Generating audio. Your message remains available as text."
+        speechTask = Task {
+            defer { if speechGenerationID == id { speechTask = nil } }
+            do {
+                let data = try await model.createSpeech(text)
+                guard !Task.isCancelled, speechGenerationID == id else { return }
+                try access.loadCloudAudio(data); cloudTranscript = text
+                cloudStatus = "Audio ready. Press Play when you want to hear it. Nothing was booked."
+            } catch {
+                if !Task.isCancelled, speechGenerationID == id { cloudStatus = error.localizedDescription }
+            }
+        }
     }
 }

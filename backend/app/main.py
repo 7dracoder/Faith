@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import secrets
@@ -15,8 +16,8 @@ from starlette.concurrency import run_in_threadpool
 from app.assistant import bedrock_intent, local_intent
 from app.catalog import search_catalog
 from app.config import Settings
-from app.integrations import configure_tracing, mirror_booking, operation, research_access
-from app.models import ConfirmRequest, IntentRequest, QuoteRequest, ResearchRequest, SearchRequest
+from app.integrations import configure_tracing, create_speech, mirror_booking, operation, research_access
+from app.models import ConfirmRequest, IntentRequest, QuoteRequest, ResearchRequest, SearchRequest, SpeechRequest
 from app.store import BookingError, BookingStore
 
 logger = logging.getLogger("faith")
@@ -26,6 +27,8 @@ def create_app(settings: Settings | None = None):
     settings = settings or Settings()
     store = BookingStore(settings.database_path)
     limits = defaultdict(deque)
+    speech_budget = deque()
+    speech_slots = asyncio.Semaphore(2)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -46,7 +49,7 @@ def create_app(settings: Settings | None = None):
         response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=(self), accelerometer=(self), gyroscope=(self)"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-            "connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+            "connect-src 'self'; media-src 'self' blob:; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         )
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
@@ -93,6 +96,7 @@ def create_app(settings: Settings | None = None):
         return {"mode": "demo", "categories": ["flight", "train", "bus", "cinema", "event"],
                 "assistant": settings.ai_provider, "payments": False, "real_tickets": False,
                 "bedrock_configured": bool(settings.bedrock_model),
+                "elevenlabs_configured": bool(os.getenv("ELEVENLABS_API_KEY")),
                 "surreal_configured": bool(os.getenv("SURREAL_URL")),
                 "phoenix_configured": bool(os.getenv("PHOENIX_COLLECTOR_ENDPOINT")),
                 "arize_configured": bool(os.getenv("ARIZE_API_KEY") and os.getenv("ARIZE_SPACE_ID")),
@@ -169,6 +173,25 @@ def create_app(settings: Settings | None = None):
                 return await research_access(body.question, settings.provider_url)
         except Exception:
             raise HTTPException(502, "Provider research is unavailable. No booking was attempted.") from None
+
+    @app.post("/api/speech")
+    async def speech(body: SpeechRequest, owner: str = Depends(session)):
+        if not os.getenv("ELEVENLABS_API_KEY"):
+            raise HTTPException(503, "ElevenLabs speech is not configured. Use device read-aloud or the visible text.")
+        now = time.monotonic()
+        while speech_budget and speech_budget[0][0] < now - 3600:
+            speech_budget.popleft()
+        # A single-process demo guard, not production billing/authentication controls.
+        recent = sum(1 for timestamp, token, _ in speech_budget if token == owner and timestamp > now - 60)
+        if recent >= 4 or len(speech_budget) >= 30 or sum(item[2] for item in speech_budget) + len(body.text) > 10_000:
+            raise HTTPException(429, "Speech generation limit reached. Use device read-aloud or the visible text.")
+        speech_budget.append((now, owner, len(body.text)))
+        try:
+            async with speech_slots:
+                audio = await create_speech(body.text)
+            return Response(audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+        except Exception:
+            raise HTTPException(502, "Cloud speech is unavailable. Your text is still available; try device read-aloud.") from None
 
     web = Path(__file__).resolve().parents[2] / "web"
     if web.exists():

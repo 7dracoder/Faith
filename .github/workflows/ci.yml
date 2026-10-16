@@ -25,5 +25,5 @@ jobs:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
       - run: xcodegen generate
-      - run: xcodebuild -scheme Faith -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
-      - run: xcodebuild -scheme Faith -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO test
+      - run: xcodebuild -scheme Faith -destination 'generic/platform=iOS Simulator' build
+      - run: xcodebuild -scheme Faith -destination 'platform=iOS Simulator,name=iPhone 16' test

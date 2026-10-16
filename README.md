@@ -33,6 +33,7 @@ Try “Two train tickets to Boston tomorrow under $150”, choose **Make a plan*
 - Spoken summaries, visual status messages, larger text, stronger contrast, and reduced motion can be selected in Access studio.
 - Optional device tilt moves focus between results. It cannot select an offer or confirm a ticket. Motion stops when the app goes into the background.
 - Haptics are optional and always paired with text. Browser support varies; iOS uses system haptics.
+- **Speak or show** in Access studio lets nonspeaking users type a message to show someone, and blind/low-vision users prepare a page/ticket summary. With explicit consent, ElevenLabs generates optional audio; playback is a separate action. The exact spoken text remains visible for deaf/hard-of-hearing users and anyone using audio off. Device read-aloud works without ElevenLabs. This is not live transcription, sign-language translation, or a replacement for participant-tested AAC.
 
 The web speech recognizer may use the browser vendor’s cloud service; the native app requests on-device recognition and offers text when unavailable. No camera, location, disability diagnosis, real name, or card details are needed. Sensor functionality requires compatible hardware and permissions. Accessibility features need participant testing; automated checks are not an accessibility certification.
 
@@ -42,7 +43,7 @@ Requires Xcode with the iOS SDK, XcodeGen, and iOS 17+. Generate the project fro
 
 ```sh
 xcodegen generate
-xcodebuild -scheme Faith -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -scheme Faith -destination 'generic/platform=iOS Simulator' build
 ```
 
 The simulator connects to `http://127.0.0.1:8000`. For a physical phone, copy `ios/Config/Local.xcconfig.example` to the ignored `ios/Config/Local.xcconfig`, set your signing team and backend address, and serve the backend on your private network. Use HTTPS for a hosted backend. Test microphone, haptics, VoiceOver, Dynamic Type, switch controls, and tilt on real devices. No cloud credentials belong in the iOS bundle.
@@ -52,6 +53,7 @@ The simulator connects to `http://127.0.0.1:8000`. For a physical phone, copy `i
 | Service | Implemented role | Default |
 | --- | --- | --- |
 | AWS Bedrock | Extract structured search intent through Converse; schema-validated and unable to book or set prices | Disabled; local parser works |
+| ElevenLabs | Consent-based text-to-speech for typed messages and page/ticket summaries; visible transcript, manual playback, device-voice alternative | Disabled until server key is configured |
 | Arize AX / Phoenix | Opt-in operation spans and synthetic intent evaluation; no request text or access preferences in spans | Disabled until runtime configuration |
 | SurrealDB | Optional minimal ticket read model; primary demo transactions remain in SQLite | Disabled |
 | Anchor Browser | Operator-only research on a configured public provider access page; unverified information, no checkout integration | Disabled |
@@ -62,6 +64,8 @@ See [integration setup](docs/INTEGRATIONS.md), [architecture and API](docs/ARCHI
 To enable Bedrock, copy `backend/.env.example` to the ignored `backend/.env`, set `FAITH_AI_PROVIDER=bedrock`, `AWS_DEFAULT_REGION=us-west-2`, and an enabled `BEDROCK_MODEL_ID`. Use AWS SSO/role credentials through the SDK credential chain. Credit eligibility, balance, permissions, model access, and expiry are account-specific. Never commit credentials or include them in client applications.
 
 ## Checks
+
+Keep normal simulator signing enabled for interactive runs: unsigned builds can search and save in memory but cannot reliably persist the Keychain session across relaunch. A local normally signed simulator run verified wallet persistence and cancellation. Physical iPhone microphone, motion, haptics, and VoiceOver checks are still needed.
 
 ```sh
 .venv/bin/python -m pytest -q backend/tests

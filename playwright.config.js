@@ -20,6 +20,6 @@ export default defineConfig({
     command: `${python} -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8765`,
     url: "http://127.0.0.1:8765/health",
     reuseExistingServer: false,
-    env: { FAITH_DATABASE_PATH: ":memory:", FAITH_AI_PROVIDER: "local", PHOENIX_COLLECTOR_ENDPOINT: "", ARIZE_API_KEY: "", ARIZE_SPACE_ID: "", SURREAL_URL: "", ANCHOR_API_KEY: "" }
+    env: { FAITH_DATABASE_PATH: ":memory:", FAITH_AI_PROVIDER: "local", PHOENIX_COLLECTOR_ENDPOINT: "", ARIZE_API_KEY: "", ARIZE_SPACE_ID: "", SURREAL_URL: "", ANCHOR_API_KEY: "", ELEVENLABS_API_KEY: "" }
   }
 });

@@ -135,3 +135,42 @@ test("browsers without a motion API retain text and touch booking", async ({ pag
   await expect(page.locator("#review-dialog")).toBeVisible();
   await expect(page.locator("#confirm-booking")).toBeDisabled();
 });
+
+test("ElevenLabs speech requires consent, retains a transcript, and never autoplays or books", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/speech", async (route) => {
+    calls++;
+    expect(route.request().postDataJSON()).toEqual({ text: "Please show me where to board.", consent: true });
+    await route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from("ID3-test") });
+  });
+  await page.locator("#open-access").click();
+  await page.locator("#speech-text").fill("Please show me where to board.");
+  await expect(page.locator("#generate-speech")).toBeDisabled();
+  expect(calls).toBe(0);
+  await page.locator("#speech-consent").check();
+  await page.locator("#generate-speech").click();
+  await expect(page.locator("#speech-transcript")).toHaveText("Please show me where to board.");
+  expect(await page.locator("#speech-audio").evaluate((audio) => audio.paused && !audio.autoplay)).toBe(true);
+  expect(calls).toBe(1);
+  const access = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+  expect(access.violations).toEqual([]);
+  await page.locator("#speech-text").fill("A different message");
+  await expect(page.locator("#speech-result")).toBeHidden();
+  await expect(page.locator("#speech-consent")).not.toBeChecked();
+  await page.locator("#clear-speech").click();
+  await expect(page.locator("#speech-text")).toHaveValue("");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#ticket-count")).toBeHidden();
+});
+
+test("speech failure preserves text and an editable page summary without requiring hearing", async ({ page }) => {
+  await page.locator("#open-access").click();
+  await page.locator("#speech-summary").click();
+  await expect(page.locator("#speech-text")).toHaveValue(/Faith demo\. No payment/);
+  await page.locator("#speech-consent").check();
+  await page.locator("#generate-speech").click();
+  await expect(page.locator("#speech-status")).toContainText("not configured");
+  await expect(page.locator("#speech-text")).toHaveValue(/Faith demo/);
+  await expect(page.locator("#speech-result")).toBeHidden();
+  await expect(page.locator("#generate-speech")).toBeEnabled();
+});

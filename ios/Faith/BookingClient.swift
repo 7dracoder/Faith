@@ -57,6 +57,23 @@ final class BookingClient {
     }
 
     private static let service = "app.faith.booking.session"
+    func speech(_ text: String) async throws -> Data {
+        try await start()
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/speech"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 40
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
+        struct Speech: Encodable { let text: String; let consent: Bool }
+        request.httpBody = try encoder.encode(Speech(text: text, consent: true))
+        let (data, response) = try await transport.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw FaithAPIError.server("No speech response.") }
+        guard http.statusCode == 200, http.mimeType == "audio/mpeg", data.count <= 2_000_000 else {
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            throw FaithAPIError.server(object?["detail"] as? String ?? "Speech unavailable. Use device read-aloud or show your text.")
+        }
+        return data
+    }
     private static func savedToken() -> String? {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                   kSecAttrService as String: service, kSecReturnData as String: true]
@@ -91,6 +108,7 @@ final class BookingModel: ObservableObject {
     private var confirmationKey = UUID().uuidString
 
     var resultPassengers: Int { resultSearch.passengers }
+    func createSpeech(_ text: String) async throws -> Data { try await client.speech(text) }
 
     func find() async {
         guard !busy else { return }

@@ -100,6 +100,18 @@
   <dialog id="access-dialog" aria-labelledby="access-title"><div class="dialog-header"><div><div class="eyebrow">YOUR EXPERIENCE, YOUR RULES</div><h2 id="access-title">Access studio</h2></div><button class="close-button" data-close="access-dialog" aria-label="Close Access studio">×</button></div><p>Choose what feels right. No diagnosis or profile needed.</p>
     <div class="settings-list"><label><span><strong>More contrast</strong><small>Stronger borders and darker text</small></span><input id="setting-contrast" type="checkbox" role="switch"></label><label><span><strong>Larger text</strong><small>Give every word more room</small></span><input id="setting-large" type="checkbox" role="switch"></label><label><span><strong>Less movement</strong><small>Keep transitions still and simple</small></span><input id="setting-reduced" type="checkbox" role="switch"></label><label><span><strong>Haptic feedback</strong><small>Short pulses on supported devices; always paired with text</small></span><input id="setting-haptics" type="checkbox" role="switch"></label><label><span><strong>Speak updates</strong><small>Optional speech; screen-reader announcements remain available</small></span><input id="setting-speech" type="checkbox" role="switch"></label></div>
     <div class="motion-card"><span class="eyebrow">LET YOUR PHONE LEND A HAND</span><h3>Tilt to explore</h3><p>Hold your phone comfortably, then enable motion. Tilt left or right to focus the previous or next result. Return to center between moves. Motion never selects or confirms a ticket.</p><button id="toggle-motion" class="secondary-button">Enable motion controls</button><p class="small-note" id="motion-note">Optional. Device support varies. Keyboard and touch are always available.</p></div>
+    <section class="motion-card speech-card" aria-labelledby="speech-title">
+      <div class="eyebrow">YOUR WORDS. MORE WAYS.</div><h3 id="speech-title">Speak or show</h3>
+      <p>Type a message to show someone, or generate an optional ElevenLabs voice. The exact spoken text stays visible. This is not live captioning or sign-language translation.</p>
+      <label for="speech-text">Message or ticket summary (600 characters maximum)</label>
+      <textarea id="speech-text" rows="4" maxlength="600" placeholder="Please show me where to board."></textarea>
+      <button id="speech-summary" class="secondary-button">Use current page summary</button>
+      <p class="small-note">Cloud speech sends only this text to ElevenLabs, which may retain it under its service policy. Avoid personal or sensitive details. Device read-aloud uses your system’s speech service instead.</p>
+      <label class="acknowledge"><input id="speech-consent" type="checkbox"><span>I agree to send this message to ElevenLabs to generate speech.</span></label>
+      <div class="wallet-actions"><button id="generate-speech" class="secondary-button" disabled>Generate ElevenLabs audio</button><button id="device-speech" class="text-button">Read message with device voice</button><button id="clear-speech" class="text-button">Clear & stop</button></div>
+      <p id="speech-status" role="status" class="small-note"></p>
+      <div id="speech-result" hidden><p><strong>Spoken text</strong></p><p id="speech-transcript"></p><audio id="speech-audio" controls preload="none" aria-label="Generated message audio"></audio></div>
+    </section>
     <button class="primary-button full-width" data-close="access-dialog">Done, make it mine <span aria-hidden="true">✓</span></button>
   </dialog>
 

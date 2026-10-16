@@ -40,6 +40,43 @@ function speak(message) {
   window.speechSynthesis.speak(utterance);
 }
 
+let speechURL, speechRequest;
+function stopCloudSpeech(clear = false) {
+  speechRequest?.abort(); speechRequest = null;
+  $("#speech-audio").pause();
+  if (clear) {
+    $("#speech-audio").removeAttribute("src"); $("#speech-audio").load();
+    if (speechURL) URL.revokeObjectURL(speechURL);
+    speechURL = null; $("#speech-result").hidden = true; $("#speech-transcript").textContent = "";
+  }
+}
+function updateSpeechButton() {
+  $("#generate-speech").disabled = !$("#speech-consent").checked || !$("#speech-text").value.trim() || Boolean(speechRequest);
+}
+async function generateSpeech() {
+  if (!$("#speech-consent").checked || speechRequest) return;
+  const text = $("#speech-text").value.trim(); if (!text) return;
+  stopCloudSpeech(true);
+  const controller = new AbortController(); speechRequest = controller;
+  updateSpeechButton(); $("#speech-status").textContent = "Generating audio. Your message remains available as text.";
+  try {
+    const response = await fetch("/api/speech", { method: "POST", credentials: "same-origin", signal: controller.signal,
+      headers: { "Content-Type": "application/json", "X-Faith-Client": "web" }, body: JSON.stringify({ text, consent: true }) });
+    if (!response.ok) { const result = await response.json(); throw new Error(typeof result.detail === "string" ? result.detail : "Check your message and try again."); }
+    const blob = await response.blob();
+    if (controller.signal.aborted) return;
+    speechURL = URL.createObjectURL(blob); $("#speech-audio").src = speechURL;
+    $("#speech-transcript").textContent = text; $("#speech-result").hidden = false;
+    $("#speech-status").textContent = "Audio ready. Press Play when you want to hear it. Nothing was booked.";
+  } catch (error) {
+    if (error.name !== "AbortError") $("#speech-status").textContent = `${error.message} You can still show your message or use device read-aloud.`;
+  } finally { if (speechRequest === controller) speechRequest = null; updateSpeechButton(); }
+}
+function pageSpeechSummary() {
+  const items = state.page === "wallet" ? state.bookings.slice(0, 3).map((b) => `${b.quote.offer.title}, ${b.quote.offer.date}, ${money(b.quote.total_minor)} total, ${b.status.replaceAll("_", " ")}.`) : state.offers.slice(0, 3).map((o) => `${o.title}, ${o.date} at ${o.departure}, ${money((o.price_minor + o.fee_minor) * (state.search?.passengers || 1))} total including fees.`);
+  return `Faith demo. No payment, real reservation, or admission. ${items.join(" ")}`.slice(0, 600);
+}
+
 function haptic(kind = "step") {
   if (prefs.haptics && "vibrate" in navigator) navigator.vibrate(kind === "success" ? [70, 60, 70] : 30);
 }
@@ -321,6 +358,17 @@ for (const id of ["open-access", "ways-access"]) $(`#${id}`).addEventListener("c
 $$("[data-close]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.close}`).close()));
 $$(".settings-list input").forEach((input) => input.addEventListener("change", () => { prefs[input.id.replace("setting-", "")] = input.checked; applyPreferences(); if (!prefs.speech && "speechSynthesis" in window) window.speechSynthesis.cancel(); haptic(); }));
 $("#toggle-motion").addEventListener("click", toggleMotion);
+$("#generate-speech").addEventListener("click", generateSpeech);
+$("#speech-audio").addEventListener("play", () => { $("#speech-status").textContent = "Playing generated audio. The spoken text stays visible below."; });
+$("#speech-audio").addEventListener("pause", () => { $("#speech-status").textContent = "Audio paused. Your text remains visible."; });
+$("#speech-audio").addEventListener("ended", () => { $("#speech-status").textContent = "Audio finished. Replay or use the visible text."; });
+$("#speech-consent").addEventListener("change", updateSpeechButton);
+$("#speech-text").addEventListener("input", () => { stopCloudSpeech(true); $("#speech-consent").checked = false; updateSpeechButton(); });
+$("#speech-summary").addEventListener("click", () => { stopCloudSpeech(true); $("#speech-text").value = pageSpeechSummary(); $("#speech-consent").checked = false; updateSpeechButton(); });
+$("#device-speech").addEventListener("click", () => { stopCloudSpeech(); if (!("speechSynthesis" in window)) $("#speech-status").textContent = "Device speech is unavailable. Your text can still be shown or read with a screen reader."; else speak($("#speech-text").value); });
+$("#clear-speech").addEventListener("click", () => { stopCloudSpeech(true); $("#speech-text").value = ""; $("#speech-consent").checked = false; $("#speech-status").textContent = "Message cleared."; if ("speechSynthesis" in window) window.speechSynthesis.cancel(); updateSpeechButton(); });
+$("#access-dialog").addEventListener("close", () => { stopCloudSpeech(true); updateSpeechButton(); if ("speechSynthesis" in window) window.speechSynthesis.cancel(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) { stopCloudSpeech(true); updateSpeechButton(); } });
 $("#dictate").addEventListener("click", dictate);
 $("#read-page").addEventListener("click", () => {
   if (!("speechSynthesis" in window)) { announce("Spoken output is unavailable. Use your screen reader or the text on this page."); return; }

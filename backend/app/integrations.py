@@ -7,6 +7,32 @@ import httpx
 from opentelemetry import trace
 
 
+async def create_speech(text):
+    """No local persistence, retries, prompt logging, or user-selected provider URLs."""
+    voice = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")
+    if not voice.isalnum() or len(voice) > 80:
+        raise ValueError("Invalid operator voice configuration")
+    async with httpx.AsyncClient(timeout=30) as client:
+        async with client.stream(
+            "POST", f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
+            headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "Accept": "audio/mpeg"},
+            params={"output_format": "mp3_44100_128"},
+            json={"text": text, "model_id": os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")},
+        ) as response:
+            response.raise_for_status()
+            if response.headers.get("content-type", "").split(";")[0] != "audio/mpeg":
+                raise ValueError("Unexpected speech response")
+            chunks, size = [], 0
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > 2_000_000:
+                    raise ValueError("Speech response too large")
+                chunks.append(chunk)
+            if not size:
+                raise ValueError("Empty speech response")
+            return b"".join(chunks)
+
+
 def configure_tracing():
     if os.getenv("ARIZE_API_KEY") and os.getenv("ARIZE_SPACE_ID"):
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter

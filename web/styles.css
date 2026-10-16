@@ -8,3 +8,6 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 .closing-note em{color:#5f704c}
 @media print{.site-header,.demo-banner,footer,.feedback-dock,dialog,#explore-page,#wallet-explore,.wallet-actions{display:none!important}#wallet-page{display:block!important}main{padding:0}.wallet-grid{display:block}.wallet-card{break-inside:avoid;margin-bottom:25px;border:1px solid #333}}
+.speech-card textarea { display: block; width: 100%; box-sizing: border-box; margin: 10px 0; padding: 12px; font: inherit; color: inherit; background: white; border: 1px solid currentColor; border-radius: 10px; resize: vertical; }
+.speech-card audio { width: 100%; }
+#speech-transcript { white-space: pre-wrap; overflow-wrap: anywhere; }
