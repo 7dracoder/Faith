@@ -10,10 +10,11 @@
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 <key>UILaunchScreen</key><dict/>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
-<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
-<key>NSMicrophoneUsageDescription</key><string>Faith uses the microphone only when you choose Dictate to describe your ticket search.</string>
-<key>NSSpeechRecognitionUsageDescription</key><string>Faith turns your optional spoken search into editable text. Booking confirmation always uses a separate button.</string>
-<key>NSMotionUsageDescription</key><string>Optional tilt controls move between ticket options. Motion data stays on your device and never confirms bookings.</string>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+<key>NSMicrophoneUsageDescription</key><string>Faith listens while you hold the screen, and during a booking conversation, so you can ask for an object or a ticket.</string>
+<key>NSCameraUsageDescription</key><string>Faith uses the camera to find the objects you ask for. A picture is sent only after you say yes or hold the screen to send it.</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>Faith turns what you say while holding the screen into text, on this iPhone, to know what you asked for.</string>
+<key>NSMotionUsageDescription</key><string>Faith uses your AirPods' motion so the sound stays where the object is when you turn your head. Motion stays on this iPhone and never confirms anything.</string>
 <key>NSLocalNetworkUsageDescription</key><string>Connect to your Faith development backend on your local network.</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>FAITH_API_URL</key><string>$(FAITH_API_URL)</string>

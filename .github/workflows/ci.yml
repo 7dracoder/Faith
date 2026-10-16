@@ -13,12 +13,6 @@ jobs:
         env:
           PYTHONPATH: backend
       - run: python scripts/evaluate.py
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
   ios:
     runs-on: macos-15
     steps:

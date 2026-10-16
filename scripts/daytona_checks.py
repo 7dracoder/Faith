@@ -17,7 +17,7 @@ def main():
     archive = io.BytesIO()
     # Explicit allowlist prevents .env, Git history, tokens, local DBs, and recordings leaving the machine.
     files = [root / "backend/requirements.txt", root / "backend/pyproject.toml", root / "scripts/evaluate.py"]
-    for folder, extensions in [("backend/app", {".py"}), ("backend/tests", {".py"}), ("web", {".html", ".css", ".js", ".svg"})]:
+    for folder, extensions in [("backend/app", {".py"}), ("backend/tests", {".py"})]:
         files.extend(path for path in (root / folder).rglob("*") if path.suffix in extensions and path.is_file())
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zipped:
         for path in files:
@@ -35,7 +35,7 @@ def main():
         if result.exit_code != 0:
             raise RuntimeError("Sandbox setup failed")
         for command in ["python -m pip install -r backend/requirements.txt", "python -m pytest -q backend/tests", "python scripts/evaluate.py"]:
-            result = sandbox.process.exec(command, cwd="/tmp/faith", timeout=120, env={"PYTHONPATH": "/tmp/faith/backend", "FAITH_AI_PROVIDER": "local", "FAITH_DATABASE_PATH": "/tmp/faith-test.sqlite3"})
+            result = sandbox.process.exec(command, cwd="/tmp/faith", timeout=120, env={"PYTHONPATH": "/tmp/faith/backend", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "FAITH_AI_PROVIDER": "local", "FAITH_DATABASE_PATH": "/tmp/faith-test.sqlite3"})
             print(result.result)
             if result.exit_code != 0:
                 raise SystemExit(result.exit_code)

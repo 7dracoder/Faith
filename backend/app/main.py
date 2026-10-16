@@ -5,19 +5,23 @@ import secrets
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from pathlib import Path
+from datetime import date
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from app.assistant import bedrock_intent, local_intent
 from app.catalog import search_catalog
 from app.config import Settings
-from app.integrations import configure_tracing, create_speech, mirror_booking, operation, research_access
-from app.models import ConfirmRequest, IntentRequest, QuoteRequest, ResearchRequest, SearchRequest, SpeechRequest
+from app.integrations import (ACCESS_SOURCES, REAL_SOURCES, access_question, configure_tracing, conversation_token, create_speech,
+                              describe_preferences, forget_preferences, load_preferences, mirror_booking, operation, real_times,
+                              research_access, save_preferences)
+from app.models import (AccessInfoRequest, ConfirmRequest, IntentRequest, ObjectLocateRequest, QuoteRequest, RealSearchRequest,
+                        ResearchRequest, SavedPreferences, SearchRequest, SpeechRequest)
+from app.object_vision import locate_object, vision_configured
 from app.store import BookingError, BookingStore
 
 logger = logging.getLogger("faith")
@@ -29,6 +33,14 @@ def create_app(settings: Settings | None = None):
     limits = defaultdict(deque)
     speech_budget = deque()
     speech_slots = asyncio.Semaphore(2)
+    vision_budget = deque()
+    vision_slots = asyncio.Semaphore(2)
+    access_cache = {}
+    access_budget = deque()
+    access_slots = asyncio.Semaphore(2)
+    agent_budget = deque()
+    real_cache = {}
+    real_budget = deque()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -80,6 +92,12 @@ def create_app(settings: Settings | None = None):
     async def booking_error(request, error):
         return JSONResponse({"detail": error.message}, status_code=error.status)
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, error):
+        # Never echo a rejected camera frame back in validation diagnostics.
+        return JSONResponse({"detail": [{"loc": item["loc"], "msg": item["msg"], "type": item["type"]}
+                                        for item in error.errors()]}, status_code=422)
+
     @app.get("/health")
     def health():
         return {"ok": True, "product": "Faith", "mode": "demo"}
@@ -96,11 +114,16 @@ def create_app(settings: Settings | None = None):
         return {"mode": "demo", "categories": ["flight", "train", "bus", "cinema", "event"],
                 "assistant": settings.ai_provider, "payments": False, "real_tickets": False,
                 "bedrock_configured": bool(settings.bedrock_model),
+                "object_vision_configured": vision_configured(settings),
                 "elevenlabs_configured": bool(os.getenv("ELEVENLABS_API_KEY")),
                 "surreal_configured": bool(os.getenv("SURREAL_URL")),
                 "phoenix_configured": bool(os.getenv("PHOENIX_COLLECTOR_ENDPOINT")),
                 "arize_configured": bool(os.getenv("ARIZE_API_KEY") and os.getenv("ARIZE_SPACE_ID")),
-                "anchor_configured": bool(os.getenv("ANCHOR_API_KEY") and settings.provider_url)}
+                "anchor_configured": bool(os.getenv("ANCHOR_API_KEY") and settings.provider_url),
+                "access_info_configured": bool(os.getenv("ANCHOR_API_KEY")),
+                "agent_configured": bool(os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_AGENT_ID")),
+                "preferences_configured": bool(os.getenv("SURREAL_URL")),
+                "real_times_configured": bool(os.getenv("ANCHOR_API_KEY"))}
 
     @app.post("/api/search")
     def search(body: SearchRequest, owner: str = Depends(session)):
@@ -139,7 +162,6 @@ def create_app(settings: Settings | None = None):
     async def mirror(booking):
         try:
             # Mirror is best-effort; never undo a committed order or create it again on failure.
-            import asyncio
             return await asyncio.wait_for(mirror_booking(booking), timeout=3)
         except Exception:
             logger.warning("Optional ticket mirror unavailable")
@@ -174,6 +196,121 @@ def create_app(settings: Settings | None = None):
         except Exception:
             raise HTTPException(502, "Provider research is unavailable. No booking was attempted.") from None
 
+    @app.post("/api/access-info")
+    async def access_info(body: AccessInfoRequest, owner: str = Depends(session)):
+        if not os.getenv("ANCHOR_API_KEY"):
+            raise HTTPException(503, "Accessibility lookup is not configured. Contact the provider directly.")
+        provider, url = ACCESS_SOURCES[body.category]
+        key = (body.category, tuple(sorted(k for k, v in body.preferences.model_dump().items() if v)))
+        now = time.monotonic()
+        cached = access_cache.get(key)
+        if not cached or cached[0] < now - 6 * 3600:
+            while access_budget and access_budget[0][0] < now - 3600:
+                access_budget.popleft()
+            # Each lookup runs a cloud browser agent; bound cost per session and overall.
+            if len(access_budget) >= 12 or sum(1 for stamp, token in access_budget if token == owner and stamp > now - 600) >= 3:
+                raise HTTPException(429, "Accessibility lookup limit reached. Try again later or contact the provider directly.")
+            access_budget.append((now, owner))
+            try:
+                with operation("faith.access_info", provider="anchor", category=body.category):
+                    async with access_slots:
+                        found = await research_access(access_question(body.preferences.model_dump()), url)
+                summary = str(found["result"].get("result") or "").replace("**", "").strip()
+                if found["result"].get("status") != "success" or not summary:
+                    raise ValueError("Empty research result")
+            except Exception:
+                raise HTTPException(502, "Accessibility lookup is unavailable. Nothing was booked. Contact the provider directly.") from None
+            cached = (now, summary[:4000])
+            access_cache[key] = cached
+        return {"provider": provider, "source": url, "summary": cached[1], "verified": False, "cached": cached[0] != now,
+                "notice": f"AI summary of the public accessibility page from {provider}. Unverified and not specific to this demo ticket. Confirm with {provider} before you go."}
+
+    @app.post("/api/real-search")
+    async def real_search(body: RealSearchRequest, owner: str = Depends(session)):
+        if body.category not in REAL_SOURCES:
+            raise HTTPException(422, "Real times are only available for trains, buses, and cinemas. Check the airline or venue directly.")
+        if not os.getenv("ANCHOR_API_KEY"):
+            raise HTTPException(503, "Real times are not configured. Check the provider's website directly.")
+        provider, url = REAL_SOURCES[body.category]
+        key = (body.category, body.origin.lower(), body.destination.lower(), body.date)
+        now = time.monotonic()
+        cached = real_cache.get(key)
+        if not cached or cached[0] < now - 1800:
+            while real_budget and real_budget[0][0] < now - 3600:
+                real_budget.popleft()
+            # Each lookup runs a cloud browser agent; bound cost per session and overall.
+            if len(real_budget) >= 12 or sum(1 for stamp, token in real_budget if token == owner and stamp > now - 600) >= 3:
+                raise HTTPException(429, "Real-time lookup limit reached. Try again later or check the provider directly.")
+            real_budget.append((now, owner))
+            try:
+                with operation("faith.real_search", provider="anchor", category=body.category):
+                    async with access_slots:
+                        found = await real_times(body.category, body.origin, body.destination, body.date.isoformat())
+                summary = str(found.get("result") or "").replace("**", "").strip()
+                if found.get("status") != "success" or not summary:
+                    raise ValueError("Empty result")
+            except Exception:
+                raise HTTPException(502, f"Couldn't read real times from {provider} right now. Nothing was booked.") from None
+            if len(real_cache) > 200:
+                real_cache.clear()
+            cached = (now, summary[:3000])
+            real_cache[key] = cached
+        return {"provider": provider, "source": url, "summary": cached[1], "verified": False, "cached": cached[0] != now,
+                "notice": f"AI reading of {provider}'s public website. Unverified and may be out of date. "
+                          f"Faith only books demo tickets; buy real tickets from {provider} directly."}
+
+    def surreal_ready():
+        if not os.getenv("SURREAL_URL"):
+            raise HTTPException(503, "Preference memory is not configured, so nothing is saved.")
+
+    @app.get("/api/preferences")
+    async def get_preferences(owner: str = Depends(session)):
+        surreal_ready()
+        try:
+            with operation("faith.preferences", action="read"):
+                saved = await asyncio.wait_for(load_preferences(owner), timeout=5)
+        except Exception:
+            raise HTTPException(502, "Saved preferences are unavailable right now.") from None
+        return {"preferences": saved, "summary": describe_preferences(saved)}
+
+    @app.put("/api/preferences")
+    async def put_preferences(body: SavedPreferences, owner: str = Depends(session)):
+        surreal_ready()
+        try:
+            with operation("faith.preferences", action="save"):
+                await asyncio.wait_for(save_preferences(owner, body.model_dump()), timeout=5)
+        except Exception:
+            raise HTTPException(502, "Couldn't save preferences right now. Nothing was saved.") from None
+        return {"saved": True, "summary": describe_preferences(body.model_dump())}
+
+    @app.delete("/api/preferences")
+    async def delete_preferences(owner: str = Depends(session)):
+        surreal_ready()
+        try:
+            with operation("faith.preferences", action="forget"):
+                await asyncio.wait_for(forget_preferences(owner), timeout=5)
+        except Exception:
+            raise HTTPException(502, "Couldn't forget preferences right now. Please try again.") from None
+        return {"forgotten": True}
+
+    @app.post("/api/objects/locate")
+    async def object_location(body: ObjectLocateRequest, owner: str = Depends(session)):
+        if not vision_configured(settings):
+            raise HTTPException(503, "Camera recognition needs a configured Baseten or Bedrock vision model. Manual surface marking and session memory still work on a supported iPhone.")
+        now = time.monotonic()
+        while vision_budget and vision_budget[0][0] < now - 3600:
+            vision_budget.popleft()
+        if len(vision_budget) >= 20 or sum(1 for stamp, token in vision_budget if token == owner and stamp > now - 60) >= 4:
+            raise HTTPException(429, "Snapshot recognition limit reached. Try later or use session memory.")
+        vision_budget.append((now, owner))
+        try:
+            async with vision_slots:
+                result = await run_in_threadpool(locate_object, body, settings)
+            return result.model_dump(mode="json")
+        except Exception:
+            # Do not log requests, image bytes, provider responses, or exception text.
+            raise HTTPException(502, "Object recognition is unavailable. No location was inferred. Try session memory or manual surface marking.") from None
+
     @app.post("/api/speech")
     async def speech(body: SpeechRequest, owner: str = Depends(session)):
         if not os.getenv("ELEVENLABS_API_KEY"):
@@ -193,9 +330,30 @@ def create_app(settings: Settings | None = None):
         except Exception:
             raise HTTPException(502, "Cloud speech is unavailable. Your text is still available; try device read-aloud.") from None
 
-    web = Path(__file__).resolve().parents[2] / "web"
-    if web.exists():
-        app.mount("/", StaticFiles(directory=web, html=True), name="faith")
+    @app.post("/api/agent/session")
+    async def agent_session(owner: str = Depends(session)):
+        if not (os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_AGENT_ID")):
+            raise HTTPException(503, "The voice booking assistant is not configured.")
+        now = time.monotonic()
+        while agent_budget and agent_budget[0][0] < now - 3600:
+            agent_budget.popleft()
+        if len(agent_budget) >= 30 or sum(1 for _, token in agent_budget if token == owner) >= 10:
+            raise HTTPException(429, "Voice assistant limit reached. Try again later.")
+        agent_budget.append((now, owner))
+        try:
+            with operation("faith.agent_session", provider="elevenlabs"):
+                token = await conversation_token()
+        except Exception:
+            raise HTTPException(502, "The voice booking assistant is unavailable right now.") from None
+        saved = "none"
+        if os.getenv("SURREAL_URL"):
+            try:
+                saved = describe_preferences(await asyncio.wait_for(load_preferences(owner), timeout=3))
+            except Exception:
+                logger.warning("Saved preferences unavailable")
+        return JSONResponse({"conversation_token": token, "today": date.today().isoformat(), "saved_preferences": saved},
+                            headers={"Cache-Control": "no-store"})
+
     return app
 
 

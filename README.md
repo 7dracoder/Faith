@@ -1,79 +1,101 @@
 # Faith
 
-<img src="web/assets/faith.svg" alt="Faith" width="64" height="64">
-
 **Your world, your way.**
 
 [![Faith checks](https://github.com/7dracoder/Faith/actions/workflows/ci.yml/badge.svg)](https://github.com/7dracoder/Faith/actions/workflows/ci.yml)
 
-Accessible journeys and experiences, through the senses and controls that work for you.
+Faith is an iPhone app for blind and low-vision people. There is one screen, and the whole screen is the button: **hold anywhere and speak.**
 
-Faith is an accessible ticket-booking prototype for blind and low-vision people, deaf and hard-of-hearing people, nonspeaking people, and anyone who prefers a different way to interact. Search flights, trains, buses, cinema, and events through one consistent flow.
+- Say an object, like “where’s my mug”, and Faith finds it with the camera, then guides you to it with sound that comes from the object’s direction.
+- Say a ticket request, like “book a train to Boston tomorrow”, and a calm voice agent helps you choose and book a flight, train, bus, cinema, or event ticket.
 
-The demo includes search, access filters, transparent group prices, an expiring review, explicit confirmation, a persistent ticket wallet, text-ticket export, and cancellation. All inventory is fictional. No payment, real booking, admission, seat, or access service is issued.
+All bookable tickets are fictional demo tickets. No payment, real booking, or admission is ever issued.
 
-## Try it locally
+The object finder uses ARKit, LiDAR depth when available, AirPods head tracking, haptics, and recorded voice lines. Each picture goes through Faith’s backend to a vision model, only after you agree, so no provider key lives on the phone.
 
-From this repository:
+## How it works
 
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r backend/requirements.txt
-.venv/bin/python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
-```
+**Hold to talk.** Hold anywhere, speak, let go. Objects go to the finder; anything about tickets, trips, showtimes, or preferences goes to the booking agent.
 
-Open [Faith](http://127.0.0.1:8000). The responsive web demo works without cloud keys. Its companion SwiftUI app uses the same API.
+**Finding an object**
 
-Try “Two train tickets to Boston tomorrow under $150”, choose **Make a plan**, review the populated fields, and choose **Find tickets**. Select an option, acknowledge the demo notice, and save it. The ticket appears under **My tickets**, where you can download a text version or cancel it.
+1. Hold and say the object. Let go.
+2. Faith asks “Send this view to find it?” Nothing has left the phone yet. **Hold** the screen (or hold and say “yes”) to send this one picture; **double tap** (or say “no”) to cancel. The offer expires after 30 seconds.
+3. Follow the sound. Say “found”, or use the VoiceOver Magic Tap, when you have it.
+4. If it isn’t in view but Faith saw it earlier this session, it offers the last-known spot. Say yes or no.
 
-## Ways to interact
+Object positions and memories stay on the phone and are cleared when tracking resets or you leave the finder.
 
-- Text, touch, keyboard, screen readers, and system switch controls use the same standard form controls.
-- Optional speech input produces editable text and never submits or confirms a booking automatically.
-- Spoken summaries, visual status messages, larger text, stronger contrast, and reduced motion can be selected in Access studio.
-- Optional device tilt moves focus between results. It cannot select an offer or confirm a ticket. Motion stops when the app goes into the background.
-- Haptics are optional and always paired with text. Browser support varies; iOS uses system haptics.
-- **Speak or show** in Access studio lets nonspeaking users type a message to show someone, and blind/low-vision users prepare a page/ticket summary. With explicit consent, ElevenLabs generates optional audio; playback is a separate action. The exact spoken text remains visible for deaf/hard-of-hearing users and anyone using audio off. Device read-aloud works without ElevenLabs. This is not live transcription, sign-language translation, or a replacement for participant-tested AAC.
+**Booking a ticket**
 
-The web speech recognizer may use the browser vendor’s cloud service; the native app requests on-device recognition and offers text when unavailable. No camera, location, disability diagnosis, real name, or card details are needed. Sensor functionality requires compatible hardware and permissions. Accessibility features need participant testing; automated checks are not an accessibility certification.
+1. Hold and say what you want. Faith hands you to the voice agent; just talk.
+2. When it offers an option, it says the total including fees. **Hold the screen for 1.5 seconds to book**, or **double tap to hear another option**. Saying “yes” or “no” also works, but the app itself checks that *your own words* after the offer clearly say yes; the agent cannot book on its own.
+3. Ask for “real times” and the agent reads real departures or showtimes and prices from Amtrak, Greyhound, or AMC. This takes about a minute and is read-only: Faith still only books demo tickets.
+4. Ask “how accessible is it really?” and it summarizes the provider’s public accessibility page. That summary is unverified.
+5. Say “remember that I live in Boston and need step-free access” and it saves those preferences for next time. It only saves when you ask or say yes, and “forget my preferences” deletes them.
+6. Ask it to find an object and it switches to the finder.
 
-## iOS
+VoiceOver: double-tap and hold to talk or to book. Rotor actions include **Send this view**, **Don’t send**, **Book it**, **Hear another option**, and **End conversation**. Every spoken state also appears as large on-screen text.
 
-Requires Xcode with the iOS SDK, XcodeGen, and iOS 17+. Generate the project from `project.yml`:
+## Sponsors and how Faith uses them
 
-```sh
-xcodegen generate
-xcodebuild -scheme Faith -destination 'generic/platform=iOS Simulator' build
-```
+| Sponsor | What it does in Faith |
+| --- | --- |
+| **ElevenLabs** | The booking voice agent: a private Conversational AI agent (Sarah voice, slowed and steady for a calm tone) whose client tools run inside the app against Faith’s backend. The backend issues short-lived conversation tokens, so the app never holds the API key. The finder’s recorded voice lines are also ElevenLabs, generated by `scripts/make_voice_clips.py`. |
+| **Baseten** | Object location: `moonshotai/Kimi-K3` vision on Baseten’s OpenAI-compatible API returns a bounding box for the one consented frame, with reasoning turned off so answers come back in a few seconds. |
+| **Daytona** | Hosts the backend in a long-lived sandbox with a public preview URL (`scripts/daytona_host.py`), and runs the test suite in a throwaway cloud sandbox (`scripts/daytona_checks.py`). |
+| **SurrealDB** | Stores a minimal copy of each demo booking, and the agent’s preference memory (home city, step-free, audio description, companion seat, usual party size), keyed by a hash of the session, never the raw token. |
+| **Anchor Browser** | Read-only cloud browser tasks on fixed, allowlisted sites: real train, bus, and cinema times and prices, and providers’ public accessibility pages. It never logs in, fills personal details, or buys. |
+| **Arize** | OpenTelemetry traces of each operation (search, quote, booking, vision, lookups) with no user text, audio, images, preferences, or identity. |
+| **AWS Bedrock** | Optional fallback for vision and ticket intent. Not configured in the current deployment. |
 
-The simulator connects to `http://127.0.0.1:8000`. For a physical phone, copy `ios/Config/Local.xcconfig.example` to the ignored `ios/Config/Local.xcconfig`, set your signing team and backend address, and serve the backend on your private network. Use HTTPS for a hosted backend. Test microphone, haptics, VoiceOver, Dynamic Type, switch controls, and tilt on real devices. No cloud credentials belong in the iOS bundle.
+## Setup
 
-## Services
+You need Python 3.12+, Xcode 26 with XcodeGen, and an iPhone on iOS 17+ for the camera.
 
-| Service | Implemented role | Default |
-| --- | --- | --- |
-| AWS Bedrock | Extract structured search intent through Converse; schema-validated and unable to book or set prices | Disabled; local parser works |
-| ElevenLabs | Consent-based text-to-speech for typed messages and page/ticket summaries; visible transcript, manual playback, device-voice alternative | Disabled until server key is configured |
-| Arize AX / Phoenix | Opt-in operation spans and synthetic intent evaluation; no request text or access preferences in spans | Disabled until runtime configuration |
-| SurrealDB | Optional minimal ticket read model; primary demo transactions remain in SQLite | Disabled |
-| Anchor Browser | Operator-only research on a configured public provider access page; unverified information, no checkout integration | Disabled |
-| Daytona | Explicitly invoked, isolated synthetic test runner with an upload allowlist and sandbox cleanup | Disabled |
-
-See [integration setup](docs/INTEGRATIONS.md), [architecture and API](docs/ARCHITECTURE.md), and [verification](docs/VERIFICATION.md). Cloud adapters have mocked contract tests; configuring one does not mean its live service has been verified.
-
-To enable Bedrock, copy `backend/.env.example` to the ignored `backend/.env`, set `FAITH_AI_PROVIDER=bedrock`, `AWS_DEFAULT_REGION=us-west-2`, and an enabled `BEDROCK_MODEL_ID`. Use AWS SSO/role credentials through the SDK credential chain. Credit eligibility, balance, permissions, model access, and expiry are account-specific. Never commit credentials or include them in client applications.
+1. **Backend keys.** `cp backend/.env.example backend/.env` and fill in what you have. It is gitignored; never commit it.
+   - ElevenLabs: `ELEVENLABS_API_KEY` (and `ELEVENLABS_AGENT_ID`, written by step 2)
+   - Baseten: `BASETEN_API_KEY`, `BASETEN_VISION_MODEL=moonshotai/Kimi-K3`
+   - SurrealDB: `SURREAL_URL`, `SURREAL_NAMESPACE`, `SURREAL_DATABASE`, `SURREAL_USERNAME`, `SURREAL_PASSWORD` (a database-level user)
+   - Anchor: `ANCHOR_API_KEY`
+   - Arize: `ARIZE_API_KEY`, `ARIZE_SPACE_ID`, `ARIZE_PROJECT_NAME`
+   - Daytona: `DAYTONA_API_KEY`, `DAYTONA_API_URL`
+   - Bedrock (optional): `AWS_DEFAULT_REGION`, `BEDROCK_MODEL_ID`, `BEDROCK_VISION_MODEL_ID` with server-side AWS credentials
+2. **Install and create the agent.**
+   ```sh
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -r backend/requirements.txt
+   .venv/bin/python scripts/elevenlabs_agent.py      # creates or updates the agent and its tools
+   .venv/bin/python scripts/make_voice_clips.py      # optional: regenerate the finder's voice lines
+   ```
+3. **Run the backend.** Either host it on Daytona:
+   ```sh
+   SSL_CERT_FILE=$(.venv/bin/python -c 'import certifi; print(certifi.where())') .venv/bin/python scripts/daytona_host.py
+   ```
+   which prints the public URL (secrets go in as sandbox environment variables, never as files; the sandbox stops after 60 idle minutes), or run it locally with `.venv/bin/python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000`.
+4. **Build the app.** Copy `ios/Config/Local.xcconfig.example` to `ios/Config/Local.xcconfig` (gitignored), set `FAITH_API_URL` to the Daytona URL (or your Mac’s LAN address) and `DEVELOPMENT_TEAM` to your Apple team, then:
+   ```sh
+   xcodegen generate
+   open Faith.xcodeproj    # choose your iPhone and Run
+   ```
+   On the phone, enable Developer Mode and trust the developer certificate the first time.
 
 ## Checks
-
-Keep normal simulator signing enabled for interactive runs: unsigned builds can search and save in memory but cannot reliably persist the Keychain session across relaunch. A local normally signed simulator run verified wallet persistence and cancellation. Physical iPhone microphone, motion, haptics, and VoiceOver checks are still needed.
 
 ```sh
 .venv/bin/python -m pytest -q backend/tests
 .venv/bin/python scripts/evaluate.py
-node --check web/app.js
-npm ci
-npx playwright install chromium
-npm test
+xcodebuild -scheme Faith -destination 'platform=iOS Simulator,name=iPhone 17' test
+SSL_CERT_FILE=$(.venv/bin/python -c 'import certifi; print(certifi.where())') .venv/bin/python scripts/daytona_checks.py
 ```
 
-SQLite is suitable for this single-service demo. Production needs real provider inventory and fulfillment APIs, identity and recovery, durable order processing, verified access details, payments/refunds, retention/deletion controls, provider terms, and accessibility testing with participants. There is no universal “any ticket” supplier: the five categories currently share the demo contract; each live category needs a supplier adapter.
+Backend tests mock every provider. The simulator uses the finder’s mock camera and audio.
+
+## Limitations
+
+- Tickets are demo tickets. Real times and accessibility summaries are AI readings of public websites: unverified, possibly out of date, and never bookable through Faith.
+- Object guidance is experimental. It is not obstacle detection or a safe route, objects may have moved, and the vision model can be wrong.
+- The camera, depth, spatial audio, head tracking, and the voice agent’s audio still need testing on a real iPhone with blind participants.
+- Rate limits and sessions are single-process demo guards, not production accounts or billing controls.
+
+See [architecture](docs/ARCHITECTURE.md), [integrations](docs/INTEGRATIONS.md), [object safety](docs/OBJECTS.md), and [verification](docs/VERIFICATION.md).

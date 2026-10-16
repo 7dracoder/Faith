@@ -1,50 +1,66 @@
 # Faith architecture
 
-Faith supports five ticket categories through one request and booking contract. The interface serves independent channel preferences instead of asking for a diagnosis or assuming a person can hear, speak, see, or perform a gesture.
+Faith is a native iPhone app with one full-screen hold-to-talk surface. On-device speech recognition routes each request: object requests go to the finder, anything about tickets, trips, showtimes, or preferences goes to the ElevenLabs booking agent. There is no web client.
 
 ```mermaid
 flowchart LR
-    A[SwiftUI or accessible web app] --> B[FastAPI]
-    B --> C[Fictional ticket catalog]
-    B --> D[SQLite offers, quotes, demo tickets]
-    B -. intent extraction .-> E[AWS Bedrock]
-    B -. metadata spans .-> F[Arize Phoenix]
-    B -. minimal read model .-> G[SurrealDB]
-    B -. explicit text consent .-> L[ElevenLabs speech]
-    H[Operator-only research] -. configured public page .-> I[Anchor Browser]
-    J[Synthetic checks] -. isolated execution .-> K[Daytona]
+    U[Hold to talk, on-device speech] --> R{Route}
+    R -- object --> F[Finder: ARKit, depth, spatial audio, head tracking]
+    F -. one consented frame .-> B[FastAPI backend on Daytona]
+    B -. bounding box .-> V[Baseten Kimi-K3 vision]
+    R -- tickets --> A[ElevenLabs agent]
+    A -. client tools run in the app .-> B
+    B --> C[Fictional ticket catalog + SQLite]
+    B -. booking mirror, preference memory .-> S[SurrealDB]
+    B -. read-only real times, access pages .-> N[Anchor Browser]
+    B -. operation spans, no user text .-> Z[Arize]
+    B -. optional fallback .-> W[AWS Bedrock]
 ```
+
+## The finder
+
+Each request captures a snapshot (upright JPEG, camera pose, intrinsics, depth). Faith then asks “Send this view to find it?”: a hold or a spoken yes sends that one frame, a double tap or no drops it, and the offer expires after 30 seconds. The backend returns only a 2D box; the phone turns it into a world point using the snapshot’s own pose and depth or a detected surface. There is no fixed-depth fallback. Guidance is binaural audio steered by AirPods head tracking, plus haptics and recorded voice lines. Positions and last-seen memories stay on the phone and are cleared when tracking resets, the app leaves the finder, or it is backgrounded. See [object finding](OBJECTS.md).
+
+## The booking agent
+
+The app asks the backend for a short-lived ElevenLabs conversation token, then talks to a private agent. The agent’s tools run in the app, against the backend:
+
+| Tool | Backend | Notes |
+| --- | --- | --- |
+| `search_tickets` | `POST /api/search` | Fictional inventory |
+| `propose_booking` | `POST /api/quotes` | Server-owned price, ten-minute expiry |
+| `confirm_booking` | `POST /api/bookings` | Only if the user’s own latest words say yes, checked in the app |
+| `check_real_times` | `POST /api/real-search` | Read-only Anchor task on Amtrak, Greyhound, or AMC |
+| `check_venue_accessibility` | `POST /api/access-info` | Read-only Anchor summary of a fixed public page |
+| `remember_preferences` / `get_preferences` / `forget_preferences` | `PUT/GET/DELETE /api/preferences` | SurrealDB; saving needs the user’s own request or yes |
+| `find_object` | none | Hands off to the finder |
+
+On the quote screen a 1.5-second hold books and a double tap asks for the next option. Booking is idempotent per quote.
 
 ## Booking transitions
 
-`search → session-owned offer → expiring quote → explicit demo acknowledgement → demo_confirmed → demo_cancelled`
+`search → session-owned offer → expiring quote → explicit confirmation → demo_confirmed → demo_cancelled`
 
-The server supplies immutable quote prices in integer USD cents, including fees for the entire group. Offer and quote identifiers are opaque. Quotes expire after ten minutes. A unique quote constraint and a per-session idempotency key prevent duplicate tickets. Cancellation is idempotent, and replaying confirmation never reactivates a cancelled ticket. Orders contain no card data or personal identity.
+Prices are integer USD cents including fees for the whole group. A unique quote constraint and a per-session idempotency key prevent duplicate tickets. Orders contain no card data or identity.
 
-Browser sessions use an HttpOnly, SameSite=Strict cookie. Browser writes need the custom client header, and no cross-origin API is enabled. Native clients use a bearer token held in Keychain. Tokens are anonymous local-demo credentials, not production account authentication. A production gateway needs distributed throttling, bounded request bodies, HTTPS, account recovery, and retention controls.
+Sessions are anonymous bearer tokens kept in the iPhone Keychain. They are demo credentials, not production accounts.
 
 ## API
 
 | Method | Path | Role |
 | --- | --- | --- |
-| POST | `/api/session` | Start/resume an anonymous browser session; issue native bearer token |
-| GET | `/api/capabilities` | Report demo/integration configuration; never claim provider connectivity |
-| POST | `/api/search` | Validate fields, apply AND access filters and whole-group budget, issue owned offers |
-| POST | `/api/assistant` | Prepare search fields; no action tools or purchase authority |
-| POST | `/api/quotes` | Create a server-priced, ten-minute review |
-| POST | `/api/bookings` | Require `accepted_demo=true`; confirm idempotently |
-| GET | `/api/bookings` | Retrieve only the active session’s tickets |
-| POST | `/api/bookings/{id}/cancel` | Cancel only the session’s demo ticket |
-| POST | `/api/research` | Operator token required; optional public-page research |
-| POST | `/api/speech` | Session + `consent=true`, at most 600 characters; bounded MP3 response, no local persistence or automatic retries |
-| GET | `/health` | Product and local service health |
+| POST | `/api/session` | Start or resume an anonymous session |
+| GET | `/api/capabilities` | Which integrations are configured |
+| POST | `/api/agent/session` | ElevenLabs conversation token, today’s date, saved-preference summary |
+| POST | `/api/search`, `/api/quotes`, `/api/bookings` | Demo booking flow |
+| GET | `/api/bookings` | The session’s tickets |
+| POST | `/api/bookings/{id}/cancel` | Cancel a demo ticket |
+| POST | `/api/real-search` | Real times and prices, read-only, unverified |
+| POST | `/api/access-info` | Provider accessibility summary, unverified |
+| GET/PUT/DELETE | `/api/preferences` | Preference memory |
+| POST | `/api/objects/locate` | One consented frame, strict 2D box |
+| GET | `/health` | Liveness |
 
-FastAPI’s generated schema is available at `/docs`. Use fictional data in development. The local catalog synthesizes travel routes from the requested cities and demo dates; it is not a schedule or availability service. Local events and cinema are in New York.
+## Real ticketing
 
-## Sensor boundaries
-
-Web: DeviceOrientation, enabled only from Access studio, calibrates neutral position, requires a return to center between moves, and changes result focus only. No sensor values are transmitted. Native: Core Motion applies the same threshold/recenter policy. Both stop on backgrounding. Dictation must be started explicitly, produces editable text, and never automatically searches or confirms. Native recognition is on-device only. Speech output and haptics have equivalent visible messages.
-
-## Live-service work
-
-Real ticketing requires provider-specific search, price revalidation, inventory holds, explicit purchase authorization, payment tokenization, supplier booking, ticket issuance, reconciliation, webhooks, refunds, and recovery from ambiguous outcomes. A model or browser task cannot establish that a payment or booking succeeded. Supplier confirmation and payment authority must be distinct from an AI-generated response. Do not add a universal browser checkout agent in place of these contracts.
+Real ticketing would need supplier APIs, price revalidation, holds, payment authorization, issuance, refunds, and reconciliation. A model or browser task cannot establish that a payment or booking succeeded, so Faith never lets one try.

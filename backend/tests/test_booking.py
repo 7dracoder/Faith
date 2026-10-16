@@ -199,14 +199,10 @@ def test_invalid_search_is_rejected(client, updates):
     assert client.post("/api/search", json=search_body(**updates)).status_code == 422
 
 
-def test_static_app_and_security_headers(client):
-    response = client.get("/")
+def test_security_headers(client):
+    response = client.get("/health")
     assert response.status_code == 200
-    assert "Faith" in response.text
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
-    assert client.get("/app.js").status_code == 200
-    assert client.get("/styles.css").status_code == 200
-    assert client.get("/assets/journey.svg").status_code == 200
     assert client.get("/api/bookings").headers["cache-control"] == "no-store"
 
 
