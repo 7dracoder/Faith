@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>Faith</string>
+<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+<key>UILaunchScreen</key><dict/>
+<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+<key>NSMicrophoneUsageDescription</key><string>Faith uses the microphone only when you choose Dictate to describe your ticket search.</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>Faith turns your optional spoken search into editable text. Booking confirmation always uses a separate button.</string>
+<key>NSMotionUsageDescription</key><string>Optional tilt controls move between ticket options. Motion data stays on your device and never confirms bookings.</string>
+<key>NSLocalNetworkUsageDescription</key><string>Connect to your Faith development backend on your local network.</string>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+<key>FAITH_API_URL</key><string>$(FAITH_API_URL)</string>
+</dict></plist>

@@ -1,0 +1,29 @@
+name: Faith checks
+on: [push, pull_request]
+jobs:
+  booking:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r backend/requirements.txt
+      - run: python -m pytest -q backend/tests
+        env:
+          PYTHONPATH: backend
+      - run: python scripts/evaluate.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - run: xcodebuild -scheme Faith -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      - run: xcodebuild -scheme Faith -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO test

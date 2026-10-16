@@ -1,0 +1,4 @@
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+BUNDLE_SUFFIX = .personal
+// Physical device: use your development machine's local IP or an HTTPS backend.
+FAITH_API_URL = http:/$()/192.168.1.10:8000

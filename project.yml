@@ -1,0 +1,40 @@
+name: Faith
+options:
+  bundleIdPrefix: app.faith
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Faith:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: ios/Config/Base.xcconfig
+      Release: ios/Config/Base.xcconfig
+    sources:
+      - ios/Faith
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.faith.booking$(BUNDLE_SUFFIX)
+        INFOPLIST_FILE: ios/Faith/Info.plist
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+    scheme:
+      testTargets:
+        - FaithTests
+  FaithTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - ios/FaithTests
+    dependencies:
+      - target: Faith
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.faith.booking.tests
+        GENERATE_INFOPLIST_FILE: YES

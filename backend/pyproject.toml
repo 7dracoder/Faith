@@ -1,0 +1,23 @@
+[project]
+name = "faith-backend"
+version = "0.2.0"
+description = "Accessible, multimodal ticket booking"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[project.optional-dependencies]
+integrations = ["arize-phoenix-otel>=0.16,<1", "opentelemetry-sdk>=1.27,<2", "opentelemetry-exporter-otlp-proto-http>=1.27,<2", "surrealdb>=1,<2", "daytona>=0.100"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

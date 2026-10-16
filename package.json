@@ -1,0 +1,16 @@
+{
+  "name": "faith",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Accessible journeys and experiences, your way",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "check": "node --check web/app.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0",
+    "@axe-core/playwright": "^4.10.2"
+  }
+}

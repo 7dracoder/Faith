@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#183e34">
+  <meta name="description" content="Faith makes room for your way of experiencing the world. An accessible ticket-booking demo for journeys, cinema, and live events.">
+  <title>Faith — Your world, your way.</title>
+  <link rel="icon" href="/assets/faith.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div class="demo-banner"><span class="status-dot"></span> A little possibility. A fully working demo. <span class="banner-detail">Illustrative tickets only · no payments or reservations</span></div>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Faith home"><img src="/assets/faith.svg" alt="" width="38" height="38"><span>faith<span class="brand-period">.</span></span></a>
+    <nav aria-label="Main navigation">
+      <button class="nav-link active" id="nav-explore" aria-current="page">Explore</button>
+      <button class="nav-link" id="nav-tickets">My tickets <span id="ticket-count" class="count" hidden>0</span></button>
+      <button class="nav-link" id="nav-how">How Faith works</button>
+    </nav>
+    <button class="access-button" id="open-access"><span aria-hidden="true">✧</span> Access studio <span class="keyboard-hint" aria-hidden="true">Aa</span></button>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div id="explore-page">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="tiny-star" aria-hidden="true">✳</span> MORE WORLD. FEWER BARRIERS.</div>
+          <h1 id="hero-title">Your next chapter.<br><em>Your way there.</em></h1>
+          <p>A train to somewhere new. A film that stays with you. An evening you’ve been waiting for. Book it your way, with Faith.</p>
+          <a class="primary-button hero-cta" href="#booking">Find your next experience <span aria-hidden="true">↗</span></a>
+          <div class="hero-footnote"><span class="overlap-circles" aria-hidden="true"><i>◉</i><i>≋</i><i>✦</i></span><span>Different senses. Same possibilities.</span></div>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="art-label"><span class="status-dot"></span> A WORLD THAT INCLUDES YOU</div>
+          <img class="landscape" src="/assets/journey.svg" alt="" width="600" height="470">
+          <div class="floating-ticket"><div class="ticket-symbol">↗</div><div><small>YOUR NEXT STOP</small><strong>A little more possibility.</strong></div><span class="ticket-spark">✧</span></div>
+          <span class="art-coordinate">TAKE THE SCENIC ROUTE &nbsp; 40.7128° N</span>
+        </div>
+      </section>
+
+      <section class="booking-section" id="booking" aria-labelledby="booking-title">
+        <div class="section-heading"><div><div class="eyebrow">ONE PLACE. EVERY POSSIBILITY.</div><h2 id="booking-title">Where will life take you?</h2></div><p>Start with a plan. Or just a feeling.</p></div>
+        <div class="booking-box">
+          <div class="category-tabs" role="group" aria-label="Ticket category">
+            <button class="category active" data-category="all" aria-pressed="true"><span aria-hidden="true">✧</span> Everything</button>
+            <button class="category" data-category="flight" aria-pressed="false"><span aria-hidden="true">↗</span> Flights</button>
+            <button class="category" data-category="train" aria-pressed="false"><span aria-hidden="true">▤</span> Trains</button>
+            <button class="category" data-category="bus" aria-pressed="false"><span aria-hidden="true">▣</span> Buses</button>
+            <button class="category" data-category="cinema" aria-pressed="false"><span aria-hidden="true">▻</span> Cinema</button>
+            <button class="category" data-category="event" aria-pressed="false"><span aria-hidden="true">♫</span> Events</button>
+          </div>
+          <form id="search-form">
+            <div class="search-fields">
+              <label>FROM / HOME CITY<input id="origin" name="origin" maxlength="80" value="New York" required autocomplete="address-level2"></label>
+              <span class="route-swap" aria-hidden="true">→</span>
+              <label>TO / DESTINATION<input id="destination" name="destination" maxlength="80" placeholder="Somewhere new" value="Boston"></label>
+              <label>WHEN<input id="date" name="date" type="date" required></label>
+              <label>PEOPLE<select id="passengers" name="passengers"><option value="1">1 person</option><option value="2">2 people</option><option value="3">3 people</option><option value="4">4 people</option><option value="5">5 people</option><option value="6">6 people</option></select></label>
+              <button class="primary-button search-submit" type="submit">Find tickets <span aria-hidden="true">↗</span></button>
+            </div>
+            <div class="search-preferences"><span class="preference-label">MAKE IT WORK FOR YOU</span>
+              <label class="chip"><input type="checkbox" name="step_free"> Step-free</label>
+              <label class="chip"><input type="checkbox" name="captions"> Captions</label>
+              <label class="chip"><input type="checkbox" name="audio_description"> Audio description</label>
+              <label class="chip"><input type="checkbox" name="companion"> Companion place</label>
+              <label class="budget-label">Total budget <input id="budget" type="number" min="0" step="0.01" max="10000" placeholder="Any" aria-label="Maximum total budget in US dollars"></label>
+            </div>
+          </form>
+          <form class="assistant-bar" id="assistant-form"><span class="assistant-orb" aria-hidden="true">✳</span><label class="sr-only" for="request">Describe your ticket search</label><input id="request" maxlength="1000" placeholder='Or try “Two train tickets to Boston tomorrow under $150”' autocomplete="off"><button type="button" class="icon-button" id="dictate" aria-label="Dictate a search" title="Dictate a search">🎙</button><button type="submit" class="text-button" id="interpret">Make a plan <span aria-hidden="true">↗</span></button></form>
+        </div>
+        <p class="search-disclosure">All options are fictional. Access features are examples, not verified provider guarantees. Search by text, voice, keyboard, or your assistive technology.</p>
+      </section>
+
+      <section class="results-section" aria-labelledby="results-title">
+        <div class="section-heading"><div><div class="eyebrow" id="results-eyebrow">A LITTLE INSPIRATION</div><h2 id="results-title" tabindex="-1">Good things are out there.</h2></div><div class="results-tools"><span id="results-count">Finding possibilities…</span><label class="sort-label">Sort by<select id="sort"><option value="recommended">Recommended</option><option value="price">Lowest total price</option></select></label></div></div>
+        <div id="search-summary" class="search-summary" hidden></div>
+        <div id="results" class="results-grid" aria-busy="true"></div>
+        <div class="empty-state" id="empty-state" hidden><span aria-hidden="true">✧</span><h3>A different plan could open a door.</h3><p>No demo options match all those preferences. Try another category, a higher budget, or fewer filters.</p><button class="secondary-button" id="clear-filters">Clear access filters and budget</button></div>
+      </section>
+
+      <section class="ways-section" aria-labelledby="ways-title"><div class="ways-intro"><div class="eyebrow">BUILT AROUND YOU</div><h2 id="ways-title">There’s more than<br>one way to get there.</h2><p>You choose how to connect. Faith meets you there.</p><button class="text-button" id="ways-access">Make Faith yours <span aria-hidden="true">↗</span></button></div>
+        <article><span class="way-icon" aria-hidden="true">◉</span><h3>Hear the whole picture.</h3><p>Clear labels, screen-reader support, and spoken summaries you can play when you want.</p><span class="way-tag">SOUND & SCREEN READERS</span></article>
+        <article><span class="way-icon peach" aria-hidden="true">≋</span><h3>Every detail, in sight.</h3><p>Read every step. See every confirmation. Explore captioned experiences without a phone call.</p><span class="way-tag">TEXT & VISUAL FEEDBACK</span></article>
+        <article><span class="way-icon lavender" aria-hidden="true">✦</span><h3>A little movement. A new way.</h3><p>Explore with optional tilt controls and feel haptic feedback on supported devices.</p><span class="way-tag">MOTION & TOUCH</span></article>
+      </section>
+      <section class="closing-note"><span aria-hidden="true">✳</span><p>Not everyone experiences the world the same way.<br><em>Everyone deserves to experience it.</em></p></section>
+    </div>
+
+    <section id="wallet-page" class="wallet-page" aria-labelledby="wallet-title" hidden><div class="eyebrow">LITTLE PLANS. BIG POSSIBILITIES.</div><h1 id="wallet-title" tabindex="-1">Your next chapters.</h1><p class="wallet-intro">Your saved demo tickets live here, in this browser. No payment or real reservation has been made.</p><div id="wallet-list" class="wallet-grid"></div><button class="secondary-button" id="wallet-explore">Explore more experiences <span aria-hidden="true">↗</span></button></section>
+  </main>
+
+  <footer><a class="brand" href="/" aria-label="Faith home"><img src="/assets/faith.svg" alt="" width="32" height="32"><span>faith.</span></a><span>Your world, your way.</span><button class="text-button" id="footer-help">About this demo & privacy</button><small>MADE FOR EVERY WAY OF BEING.</small></footer>
+  <div class="feedback-dock"><button id="read-page" aria-label="Read a summary of this page aloud"><span aria-hidden="true">◖))</span> Read aloud</button><span class="dock-divider"></span><span id="sensor-status">Text & touch ready</span></div>
+  <div id="status" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="error" class="error-toast" role="alert" hidden></div>
+
+  <dialog id="access-dialog" aria-labelledby="access-title"><div class="dialog-header"><div><div class="eyebrow">YOUR EXPERIENCE, YOUR RULES</div><h2 id="access-title">Access studio</h2></div><button class="close-button" data-close="access-dialog" aria-label="Close Access studio">×</button></div><p>Choose what feels right. No diagnosis or profile needed.</p>
+    <div class="settings-list"><label><span><strong>More contrast</strong><small>Stronger borders and darker text</small></span><input id="setting-contrast" type="checkbox" role="switch"></label><label><span><strong>Larger text</strong><small>Give every word more room</small></span><input id="setting-large" type="checkbox" role="switch"></label><label><span><strong>Less movement</strong><small>Keep transitions still and simple</small></span><input id="setting-reduced" type="checkbox" role="switch"></label><label><span><strong>Haptic feedback</strong><small>Short pulses on supported devices; always paired with text</small></span><input id="setting-haptics" type="checkbox" role="switch"></label><label><span><strong>Speak updates</strong><small>Optional speech; screen-reader announcements remain available</small></span><input id="setting-speech" type="checkbox" role="switch"></label></div>
+    <div class="motion-card"><span class="eyebrow">LET YOUR PHONE LEND A HAND</span><h3>Tilt to explore</h3><p>Hold your phone comfortably, then enable motion. Tilt left or right to focus the previous or next result. Return to center between moves. Motion never selects or confirms a ticket.</p><button id="toggle-motion" class="secondary-button">Enable motion controls</button><p class="small-note" id="motion-note">Optional. Device support varies. Keyboard and touch are always available.</p></div>
+    <button class="primary-button full-width" data-close="access-dialog">Done, make it mine <span aria-hidden="true">✓</span></button>
+  </dialog>
+
+  <dialog id="review-dialog" aria-labelledby="review-title"><div class="dialog-header"><div><div class="eyebrow">TAKE A MOMENT. IT’S YOUR CHOICE.</div><h2 id="review-title">Let’s check the details.</h2></div><button class="close-button" data-close="review-dialog" aria-label="Close ticket review">×</button></div><div id="review-content"></div></dialog>
+  <dialog id="help-dialog" aria-labelledby="help-title"><div class="dialog-header"><h2 id="help-title">A little more about Faith.</h2><button class="close-button" data-close="help-dialog" aria-label="Close help">×</button></div><div class="help-content"><h3>Your way to book</h3><p>Choose a category, set a date and preferences, then find tickets. Review the total including fees and create a clearly marked demo ticket. Find and cancel it under My tickets.</p><h3>Choose your channels</h3><p>Every action works through text and touch. Voice input is optional and permission-based. Your browser may send dictation to its speech service. VoiceOver, TalkBack, keyboard, and switch controls can use the regular buttons. Access studio has contrast, text, speech, haptic, and optional motion settings.</p><h3>What’s real in this demo?</h3><p>The search, price review, saved tickets, and cancellation flow work. The inventory is fictional. No seats, access services, companion places, transport, payments, or admission are reserved. Carrier and venue access details require provider verification before a live service.</p><h3>Your information</h3><p>No card details, real names, disability diagnoses, or camera/location data are collected. Appearance preferences stay on this device. Demo bookings and requested access features are stored on the local server against a private browser session. Typed searches go to this server; when Bedrock is enabled they also go to AWS for intent extraction. Use fictional requests in this development demo.</p><h3>Sensor privacy</h3><p>Tilt values stay on the device, stop when you disable motion or leave the page, and never confirm bookings. Dictation starts only when you press the microphone and stops when you press it again, finish, or leave the page.</p></div></dialog>
+  <dialog id="cancel-dialog" aria-labelledby="cancel-title"><div class="dialog-header"><h2 id="cancel-title">Cancel this demo ticket?</h2><button class="close-button" data-close="cancel-dialog" aria-label="Keep ticket and close">×</button></div><p>This only changes your demo ticket. There is no payment to refund.</p><div class="dialog-actions"><button class="secondary-button" data-close="cancel-dialog">Keep my ticket</button><button id="confirm-cancel" class="primary-button">Cancel demo ticket</button></div></dialog>
+</body>
+</html>
