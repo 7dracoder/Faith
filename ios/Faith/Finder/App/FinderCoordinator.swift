@@ -590,8 +590,9 @@ final class FinderCoordinator: ObservableObject {
         debug.lastDetection = nil
         state = .locating(utterance: utterance)
         requestTask = Task {
-            if let seen = await recall(utterance) {
-                await answerFromMemory(seen)
+            // A spot measured in an earlier AR session can't be guided to, so it is
+            // only spoken and the live find still runs.
+            if let seen = await recall(utterance), await answerFromMemory(seen) {
                 return
             }
             if Task.isCancelled {
@@ -722,32 +723,26 @@ final class FinderCoordinator: ObservableObject {
     }
 
     /// "I last saw your keys on the kitchen counter, 3 minutes ago." Then guidance, if the spot
-    /// was measured in this AR session; otherwise the words are all Faith can honestly give.
-    private func answerFromMemory(_ seen: SeenObject) async {
+    /// was measured in this AR session. Returns false when there's nothing to guide to.
+    private func answerFromMemory(_ seen: SeenObject) async -> Bool {
         let sentence = SeenObjectMemory.sentence(for: seen)
         let target = seen.target(in: arSessionID)
         logger.info("Answering from memory, seen \(ObjectMemory.minutesAgo(seen.seenAt), privacy: .public) min ago, guidable: \(target != nil, privacy: .public)")
         memoryAnswer = sentence
         environment.audio.playEarcon(.located)
         await speak(sentence)
-        if Task.isCancelled {
-            return
-        }
-        guard let target else {
-            if case .locating = state {
-                state = readyOrSetup
-            }
-            return
+        guard !Task.isCancelled, let target else {
+            return Task.isCancelled
         }
         environment.perception.clearDebugMarkers()
         environment.perception.showDebugMarker(for: target)
         debug.placement = target.placement
         debug.targetPosition = target.worldPosition
         await sayAndWait(.navigating)
-        if Task.isCancelled {
-            return
+        if !Task.isCancelled {
+            beginGuidance(for: target, fromMemory: true)
         }
-        beginGuidance(for: target, fromMemory: true)
+        return true
     }
 
     /// The vision model couldn't find it (or couldn't answer), and memory had nothing:
@@ -931,7 +926,7 @@ final class FinderCoordinator: ObservableObject {
         }
     }
 
-    /// Inside the bubble the cue and the vibration follow the phone's distance (DetectorCue).
+    /// Inside the bubble the cue follows the phone's distance (DetectorCue).
     private func applyDetector(to parameters: CueParameters, phoneDistance: Float) -> CueParameters {
         let wasActive = isDetectorActive
         isDetectorActive = DetectorCue.isActive(phoneDistance: phoneDistance, wasActive: wasActive)
@@ -939,10 +934,8 @@ final class FinderCoordinator: ObservableObject {
             logger.info("Detector \(self.isDetectorActive ? "ON" : "OFF", privacy: .public) at \(phoneDistance, privacy: .public) m")
         }
         guard isDetectorActive else {
-            proximityHaptics.update(closeness: nil)
             return parameters
         }
-        proximityHaptics.update(closeness: DetectorCue.closeness(phoneDistance: phoneDistance))
         return DetectorCue.adjust(parameters, phoneDistance: phoneDistance)
     }
 
@@ -1087,6 +1080,9 @@ final class FinderCoordinator: ObservableObject {
                 return
             }
             parameters = applyDetector(to: parameters, phoneDistance: distance)
+            let angle = Geometry.signedHorizontalAngleDegrees(from: listener.position, forward: listener.forward,
+                                                              to: target.worldPosition)
+            proximityHaptics.update(HapticGuidance.pulse(phoneDistance: distance, angleDegrees: angle))
 
             environment.audio.updateCue(parameters)
             cue = parameters

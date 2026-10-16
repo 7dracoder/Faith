@@ -23,6 +23,8 @@ enum AudioSessionConfigurator {
             mode: .default,
             options: [.allowBluetoothA2DP, .mixWithOthers]
         )
+        // iOS mutes haptics while the mic records unless allowed.
+        try session.setAllowHapticsAndSystemSoundsDuringRecording(true)
         #endif
         try session.setActive(true)
 

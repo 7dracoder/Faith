@@ -19,7 +19,7 @@ flowchart LR
 
 ## The finder
 
-Each request captures a snapshot (upright JPEG, camera pose, intrinsics, depth). Faith first checks object memory; if the object isn’t remembered, the frame is sent as soon as the user lets go (asking is the consent). The backend returns only a 2D box; the phone turns it into a world point using the snapshot’s own pose and depth or a detected surface. There is no fixed-depth fallback. Guidance is binaural audio steered by AirPods head tracking, plus haptics and recorded voice lines. While the finder is open, memory snapshots every few seconds (only when the view changed) stay on the phone; the backend lists their objects without storing them, and SurrealDB keeps only names, places, times, and AR positions. Positions guide only within the AR session that measured them. See [object finding](OBJECTS.md).
+Each request captures a snapshot (upright JPEG, camera pose, intrinsics, depth). Faith first checks object memory; if the object isn’t remembered at a position from the current AR session, the frame is sent as soon as the user lets go (asking is the consent). The backend returns only a 2D box; the phone turns it into a world point using the snapshot’s own pose and depth or a detected surface. There is no fixed-depth fallback. Guidance is binaural audio steered by AirPods head tracking, plus haptics and recorded voice lines. While the finder is open, memory snapshots every few seconds (only when the view changed) stay on the phone; the backend lists their objects without storing them, and SurrealDB keeps only names, places, times, and AR positions. Positions guide only within the AR session that measured them. See [object finding](OBJECTS.md).
 
 ## The booking agent
 

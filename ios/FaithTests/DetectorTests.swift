@@ -194,3 +194,37 @@ final class ArrivalTests: XCTestCase {
         coordinator.onDisappear()
     }
 }
+
+final class HapticGuidanceTests: XCTestCase {
+    func testPulsesSpeedUpAndStrengthenAsThePhoneGetsCloser() {
+        let far = HapticGuidance.pulse(phoneDistance: 4, angleDegrees: 0)
+        let middle = HapticGuidance.pulse(phoneDistance: 1.5, angleDegrees: 0)
+        let near = HapticGuidance.pulse(phoneDistance: 0.25, angleDegrees: 0)
+
+        XCTAssertEqual(far.interval, 1.0, accuracy: 1e-6)
+        XCTAssertEqual(near.interval, 0.15, accuracy: 1e-6)
+        XCTAssertGreaterThan(far.interval, middle.interval)
+        XCTAssertGreaterThan(middle.interval, near.interval)
+        XCTAssertLessThan(far.intensity, middle.intensity)
+        XCTAssertLessThan(middle.intensity, near.intensity)
+        XCTAssertEqual(near.intensity, 1, accuracy: 1e-6)
+        XCTAssertFalse(near.isWrongWay)
+    }
+
+    func testIntervalAtTheEdges() {
+        XCTAssertEqual(HapticGuidance.pulse(phoneDistance: 3.0, angleDegrees: 0).interval, 1.0, accuracy: 1e-6)
+        XCTAssertEqual(HapticGuidance.pulse(phoneDistance: 0.30, angleDegrees: 0).interval, 0.15, accuracy: 1e-6)
+        XCTAssertEqual(HapticGuidance.pulse(phoneDistance: 1.65, angleDegrees: 0).interval, 0.575, accuracy: 1e-3)
+    }
+
+    func testFacingAwayGivesASlowSoftDoubleTap() {
+        let away = HapticGuidance.pulse(phoneDistance: 1.0, angleDegrees: 150)
+        XCTAssertTrue(away.isWrongWay)
+        XCTAssertGreaterThanOrEqual(away.interval, 0.8)
+        XCTAssertLessThan(away.sharpness, HapticGuidance.pulse(phoneDistance: 1.0, angleDegrees: 10).sharpness)
+        XCTAssertTrue(HapticGuidance.pulse(phoneDistance: 2.0, angleDegrees: -120).isWrongWay)
+        // Within reach the angle jumps around, so it never counts as the wrong way.
+        XCTAssertFalse(HapticGuidance.pulse(phoneDistance: 0.4, angleDegrees: 170).isWrongWay)
+        XCTAssertFalse(HapticGuidance.pulse(phoneDistance: 1.0, angleDegrees: 60).isWrongWay)
+    }
+}

@@ -20,9 +20,9 @@ The object finder uses ARKit, LiDAR depth when available, AirPods head tracking,
 **Finding an object**
 
 1. Hold and say the object, like “where did I leave my keys”. Let go.
-2. If Faith has seen it, it says so, for example “I last saw your keys on the kitchen counter, 3 minutes ago.” If that spot was measured since the camera last started, it then guides you there.
-3. Otherwise the camera view is sent as soon as you let go (asking is the consent), and Faith says “Item found, navigating” or “Item not found, please turn”.
-4. Follow the sound. When the phone is held at the object (within about 25 cm for half a second), Faith rings a bright chime, vibrates, says “Found it”, and goes back to the hold-to-talk screen. You can also say “found”, or use the VoiceOver Magic Tap.
+2. If Faith has seen it, it says so, for example “I last saw your keys on the kitchen counter, 3 minutes ago.” If that spot was measured since the camera last started, it then guides you there; otherwise it still looks with the camera.
+3. If it can’t guide from memory, the camera view is sent as soon as you let go (asking is the consent), and Faith says “Item found, navigating” or “Item not found, please turn”.
+4. Follow the sound and the vibration: the phone taps about once a second when you’re far away, faster and stronger as you get closer, and a soft double tap means you’re facing away. When the phone is held at the object (within about 25 cm for half a second), Faith rings a bright chime, vibrates, says “Found it”, and goes back to the hold-to-talk screen. You can also say “found”, or use the VoiceOver Magic Tap.
 
 **Object memory.** While the finder is open and the camera is tracking, Faith takes a snapshot every few seconds, but only when the view has changed (you moved or turned) or about 30 seconds have passed. The pictures stay on the phone: the last 200, for at most 24 hours, excluded from iCloud backup. Each snapshot goes once to the vision model to list the objects in it, and is not stored on the server. Only object names, a short place description, the time, and the AR position go to SurrealDB, keyed by a hash of your session. A copy also stays on the phone, so it works offline. Faith announces this once on first launch. Say **“stop remembering”** or **“start remembering”** to turn it off or on, and **“forget what you’ve seen”** to delete the pictures and every remembered object. Capture never runs on the booking screen or in the background.
 

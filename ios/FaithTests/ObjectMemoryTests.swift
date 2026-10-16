@@ -181,13 +181,28 @@ final class MemoryFlowTests: XCTestCase {
         coordinator.onDisappear()
     }
 
-    func testRememberedFromAnEarlierSessionIsSpokenNotGuided() async throws {
+    func testRememberedFromAnEarlierSessionIsSpokenThenFoundLive() async throws {
+        let coordinator = try await makeReadyCoordinator(seen: [seen("keys")])
+        locator.visible = ["key"]
+        try await say("where are my keys", to: coordinator)
+        guard case .guiding = coordinator.state else {
+            return XCTFail("expected guiding, got \(coordinator.state)")
+        }
+        XCTAssertEqual(speech.spoken, ["I last saw your keys on the kitchen counter, 3 minutes ago."])
+        XCTAssertEqual(prompts.played, [.searching, .foundNavigating])
+        XCTAssertEqual(locator.calls, 1)
+        coordinator.onDisappear()
+    }
+
+    func testRememberedFromAnEarlierSessionButNotInViewSaysTurn() async throws {
         let coordinator = try await makeReadyCoordinator(seen: [seen("keys")])
         try await say("where are my keys", to: coordinator)
-        XCTAssertEqual(coordinator.state, .ready)
-        XCTAssertEqual(speech.spoken, ["I last saw your keys on the kitchen counter, 3 minutes ago."])
-        XCTAssertEqual(coordinator.memoryAnswer, speech.spoken.first)
-        XCTAssertEqual(locator.calls, 0)
+        guard case .error(.objectNotFound) = coordinator.state else {
+            return XCTFail("expected objectNotFound, got \(coordinator.state)")
+        }
+        XCTAssertEqual(coordinator.memoryAnswer, "I last saw your keys on the kitchen counter, 3 minutes ago.")
+        XCTAssertEqual(prompts.played, [.searching, .notFoundTurn])
+        XCTAssertEqual(locator.calls, 1)
         coordinator.onDisappear()
     }
 
@@ -197,7 +212,7 @@ final class MemoryFlowTests: XCTestCase {
         try await say("where's my wallet", to: coordinator)
         XCTAssertEqual(speech.spoken, ["I last saw your wallet on the hall table, 10 minutes ago."])
         XCTAssertEqual(store.memory.bestMatch(for: "wallet")?.place, "on the hall table")
-        XCTAssertEqual(locator.calls, 0)
+        XCTAssertEqual(locator.calls, 1, "no position from this session, so it still looks")
         coordinator.onDisappear()
     }
 
