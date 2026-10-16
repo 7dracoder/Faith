@@ -80,7 +80,11 @@ struct HomeView: View {
     @EnvironmentObject private var agent: BookingAgent
 
     var body: some View {
-        Group {
+        ZStack {
+            // ARKit only delivers frames once the AR view is in the window, so it always stays underneath.
+            PreviewContainer(previewView: coordinator.previewView) { _ in }
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
             if agent.isOn {
                 AgentView()
             } else {
